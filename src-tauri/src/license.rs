@@ -132,13 +132,13 @@ fn clear_cache(app: &tauri::AppHandle) {
 }
 
 /// Cek ke server. Err = gagal terhubung (bukan penolakan dari server).
-fn verify(email: &str, machine: &str) -> Result<Reply, String> {
+fn verify(email: &str, machine: &str, action: &str) -> Result<Reply, String> {
     let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(12)).build();
-    let res = agent
-        .get(URL)
-        .query("email", email)
-        .query("machine", machine)
-        .query("v", env!("CARGO_PKG_VERSION"))
+    let mut req = agent.get(URL).query("email", email).query("machine", machine).query("v", env!("CARGO_PKG_VERSION"));
+    if !action.is_empty() {
+        req = req.query("action", action);
+    }
+    let res = req
         .call()
         .map_err(|e| e.to_string())?;
     let body = res.into_string().map_err(|e| e.to_string())?;
@@ -170,7 +170,7 @@ fn status_blocking(app: tauri::AppHandle) -> LicenseState {
         machine: machine.clone(),
         offline,
     };
-    match verify(&c.email, &machine) {
+    match verify(&c.email, &machine, "") {
         Ok(r) if r.ok => {
             write_cache(&app, &c.email, &r.name, &machine);
             done(false, "", r.name)
@@ -195,7 +195,7 @@ fn activate_blocking(app: tauri::AppHandle, email: String) -> LicenseState {
     if URL.is_empty() {
         return state(false, "unconfigured", "Server lisensi belum diatur di build ini.", &machine);
     }
-    match verify(&email, &machine) {
+    match verify(&email, &machine, "") {
         Ok(r) if r.ok => {
             write_cache(&app, &email, &r.name, &machine);
             LicenseState { ok: true, code: "ok".into(), message: r.message, email: Some(email), name: Some(r.name), machine, offline: false }
@@ -219,8 +219,30 @@ pub async fn license_activate(app: tauri::AppHandle, email: String) -> LicenseSt
         .unwrap_or_else(|e| state(false, "error", e.to_string(), ""))
 }
 
-/// Lepas lisensi di komputer ini saja (ganti email). Data di sheet tidak berubah.
+fn logout_blocking(app: tauri::AppHandle) -> LicenseState {
+    let machine = machine_id();
+    let Some(c) = read_cache(&app, &machine) else {
+        return state(true, "released", "Komputer ini sudah tidak memakai lisensi.", &machine);
+    };
+    match verify(&c.email, &machine, "release") {
+        // server sudah mengosongkan ID komputer di sheet -> hapus juga aktivasi lokal
+        Ok(r) if r.ok && r.code == "released" => {
+            clear_cache(&app);
+            state(true, "released", r.message, &machine)
+        }
+        // server lama (belum punya fitur logout) membalas "aktif" tanpa mengosongkan sheet
+        Ok(r) if r.ok => state(false, "server_old", "Server lisensi belum mendukung logout. Hubungi admin untuk pindah komputer.", &machine),
+        Ok(r) => state(false, &r.code, r.message, &machine),
+        // tanpa internet sheet tidak bisa diubah; aktivasi lokal dipertahankan supaya tidak terkunci
+        Err(e) => state(false, "network", format!("Logout butuh internet supaya lisensi bisa dipakai di komputer lain. ({e})"), &machine),
+    }
+}
+
+/// Logout: lepas lisensi dari komputer ini (ID komputer di sheet dikosongkan) supaya
+/// email yang sama bisa diaktifkan di komputer lain.
 #[tauri::command]
-pub fn license_reset(app: tauri::AppHandle) {
-    clear_cache(&app);
+pub async fn license_logout(app: tauri::AppHandle) -> LicenseState {
+    tauri::async_runtime::spawn_blocking(move || logout_blocking(app))
+        .await
+        .unwrap_or_else(|e| state(false, "error", e.to_string(), ""))
 }

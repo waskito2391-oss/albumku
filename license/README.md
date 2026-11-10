@@ -31,11 +31,13 @@ Aturan: **1 email = 1 komputer**. Email harus terdaftar di sheet; saat aktivasi 
 | F Terakhir Dipakai | waktu cek terakhir | otomatis |
 | G Versi App | versi ALBUMKU yang dipakai | otomatis |
 | H Catatan | bebas | kamu |
+| I Jumlah Pindah | berapa kali pembeli logout untuk pindah komputer | otomatis |
 
 ## Sehari-hari
 
 - **Pembeli baru**: tambah baris, isi Email (dan Nama).
-- **Pindah komputer / install ulang Windows**: kosongkan kolom **C** baris pembeli itu, lalu pembeli aktivasi lagi di komputer barunya.
+- **Pindah komputer**: pembeli klik menu email di kanan atas aplikasi → **Logout dari komputer ini**, lalu aktivasi di komputer baru. Kolom **C** kosong otomatis dan kolom **I** bertambah.
+- **Komputer lama rusak / install ulang Windows** (tidak sempat logout): kosongkan kolom **C** baris pembeli itu secara manual.
 - **Blokir**: isi kolom **D** dengan `nonaktif`. Berlaku saat aplikasi dibuka berikutnya.
 
 ## Perilaku di aplikasi

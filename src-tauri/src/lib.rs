@@ -72,7 +72,7 @@ pub fn run() {
             export::open_folder,
             license::license_status,
             license::license_activate,
-            license::license_reset,
+            license::license_logout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ALBUMKU");

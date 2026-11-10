@@ -4,7 +4,7 @@ import { useStore } from "../store";
 import { autoBuild, openProject, saveProject } from "../lib/actions";
 import { formatSummary } from "../lib/formats";
 import { Btn, Toggle } from "./ui";
-import { AppVersion, Logo, ThemeMenu } from "./Brand";
+import { AppVersion, LicenseMenu, Logo, ThemeMenu } from "./Brand";
 
 function AutoBuildDialog({ onClose }: { onClose: () => void }) {
   const photos = useStore((s) => s.photos);
@@ -114,6 +114,7 @@ export function TopBar() {
         <span className="truncate text-[11px] text-ink-400">{formatSummary(project.format)}</span>
       </div>
 
+      <LicenseMenu />
       <ThemeMenu />
       <Btn title={guides ? "Sembunyikan garis bantu" : "Tampilkan garis bantu"} onClick={() => set({ guides: !guides })} active={guides}>
         {guides ? <Eye size={15} /> : <EyeOff size={15} />} Garis bantu

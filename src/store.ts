@@ -34,6 +34,8 @@ interface State {
   planner: boolean;
   /** mode edit kotak foto (template manual) */
   cellEdit: boolean;
+  /** lisensi aktif di komputer ini (null = mode pengembangan) */
+  license: { email: string; name: string; offline: boolean } | null;
   /** id palet aktif: preset, "photo" (dari foto halaman) atau "custom" (Paletku) */
   paletteId: string;
   customColors: string[];
@@ -83,6 +85,7 @@ export const useStore = create<State>((set, get) => ({
   smartCrop: true,
   planner: false,
   cellEdit: false,
+  license: null,
   paletteId: initialPalette.activeId,
   customColors: initialPalette.custom,
   photoColors: [],

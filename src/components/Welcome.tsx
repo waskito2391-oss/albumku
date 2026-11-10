@@ -5,7 +5,7 @@ import type { Format } from "../types";
 import { openProject } from "../lib/actions";
 import { ALBUM_SIZES, MAGAZINE_SIZES, SLIDE_RATIOS, SOCIAL_SIZES, docSize, printFormat, socialFormat } from "../lib/formats";
 import { Btn, Toggle } from "./ui";
-import { AppVersion, Logo, ThemeMenu } from "./Brand";
+import { AppVersion, LicenseMenu, Logo, ThemeMenu } from "./Brand";
 
 type Cat = "album" | "magazine" | "social";
 
@@ -109,6 +109,7 @@ export function Welcome() {
             <AppVersion />
           </span>
           <div className="flex items-center gap-1">
+            <LicenseMenu />
             <ThemeMenu />
             <Btn onClick={openProject}>
               <FolderOpen size={15} /> Buka proyek

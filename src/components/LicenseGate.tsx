@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Check, Copy } from "./icons";
 import { useEffect, useState, type ReactNode } from "react";
 import { Logo } from "./Brand";
+import { useStore } from "../store";
 
 export interface LicenseState {
   ok: boolean;
@@ -12,6 +13,9 @@ export interface LicenseState {
   machine: string;
   offline: boolean;
 }
+
+const remember = (s: LicenseState) =>
+  useStore.getState().set({ license: s.ok && s.email ? { email: s.email, name: s.name ?? "", offline: s.offline } : null });
 
 /** Aplikasi baru tampil setelah lisensi (email terdaftar + komputer ini) terverifikasi. */
 export function LicenseGate({ children }: { children: ReactNode }) {
@@ -25,6 +29,7 @@ export function LicenseGate({ children }: { children: ReactNode }) {
     setSt(null);
     invoke<LicenseState>("license_status").then((s) => {
       setSt(s);
+      remember(s);
       if (s.email) setEmail(s.email);
       if (s.ok && s.offline) setNote(s.message);
     });
@@ -35,7 +40,9 @@ export function LicenseGate({ children }: { children: ReactNode }) {
     if (!email.trim() || busy) return;
     setBusy(true);
     try {
-      setSt(await invoke<LicenseState>("license_activate", { email }));
+      const s = await invoke<LicenseState>("license_activate", { email });
+      setSt(s);
+      remember(s);
     } finally {
       setBusy(false);
     }
