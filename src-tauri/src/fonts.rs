@@ -1,5 +1,5 @@
-//! Daftar font terpasang di Windows (sistem + per-user) langsung dari file font,
-//! digabung font yang hanya terdaftar lewat GDI (Adobe Fonts / Creative Cloud, dll).
+//! Daftar font terpasang (Windows & macOS: sistem + per-user) langsung dari file font,
+//! digabung font yang hanya terdaftar lewat GDI di Windows (Adobe Fonts / Creative Cloud, dll).
 //! Font Adobe ditandai dengan membaca NAMA family dari folder sinkron Creative Cloud
 //! (file tidak disalin/diubah; lisensi tetap dikelola Creative Cloud).
 use rayon::prelude::*;
@@ -23,13 +23,21 @@ static CACHE: Mutex<Option<Vec<FontFamily>>> = Mutex::new(None);
 
 /// Folder sinkron Adobe Fonts (berisi OTF/TTF aktif dengan nama file teracak).
 fn adobe_dirs() -> Vec<PathBuf> {
-    let Ok(roaming) = std::env::var("APPDATA") else { return vec![] };
-    let base = PathBuf::from(roaming).join("Adobe\\CoreSync\\plugins\\livetype");
-    ["r", "t", "w"].iter().map(|d| base.join(d)).collect()
+    #[cfg(windows)]
+    let base = match std::env::var("APPDATA") {
+        Ok(r) => PathBuf::from(r).join("Adobe\\CoreSync\\plugins\\livetype"),
+        Err(_) => return vec![],
+    };
+    #[cfg(not(windows))]
+    let base = match std::env::var("HOME") {
+        Ok(h) => PathBuf::from(h).join("Library/Application Support/Adobe/CoreSync/plugins/livetype"),
+        Err(_) => return vec![],
+    };
+    ["r", "t", "w", ".r", ".t", ".w"].iter().map(|d| base.join(d)).collect()
 }
 
-/// Semua nama family (ID1 & ID16) dari font Adobe yang sedang aktif, huruf kecil.
-fn adobe_names() -> HashSet<String> {
+/// File font Adobe yang sedang aktif (nama file teracak, kadang tanpa ekstensi).
+fn adobe_files() -> Vec<PathBuf> {
     let mut files = Vec::new();
     for d in adobe_dirs() {
         if let Ok(rd) = std::fs::read_dir(d) {
@@ -37,6 +45,11 @@ fn adobe_names() -> HashSet<String> {
         }
     }
     files
+}
+
+/// Semua nama family (ID1 & ID16) dari font Adobe yang sedang aktif, huruf kecil.
+fn adobe_names() -> HashSet<String> {
+    adobe_files()
         .par_iter()
         .flat_map(|p| {
             let Ok(data) = std::fs::read(p) else { return vec![] };
@@ -58,12 +71,22 @@ fn adobe_names() -> HashSet<String> {
         .collect()
 }
 
+#[cfg(windows)]
 fn font_dirs() -> Vec<PathBuf> {
     let mut v = Vec::new();
     let win = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into());
     v.push(PathBuf::from(win).join("Fonts"));
     if let Ok(local) = std::env::var("LOCALAPPDATA") {
         v.push(PathBuf::from(local).join("Microsoft\\Windows\\Fonts"));
+    }
+    v
+}
+
+#[cfg(not(windows))]
+fn font_dirs() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = ["/System/Library/Fonts", "/System/Library/Fonts/Supplemental", "/Library/Fonts"].iter().map(PathBuf::from).collect();
+    if let Ok(h) = std::env::var("HOME") {
+        v.push(PathBuf::from(h).join("Library/Fonts"));
     }
     v
 }
@@ -123,6 +146,9 @@ fn scan() -> Vec<FontFamily> {
             }
         }
     }
+    // macOS: font Adobe aktif tidak ada di folder Fonts, jadi dibaca langsung dari folder sinkronnya
+    #[cfg(not(windows))]
+    files.extend(adobe_files());
     let faces: Vec<(String, u16, bool)> = files.par_iter().flat_map(parse_file).collect();
     let mut map: BTreeMap<String, (String, BTreeSet<u16>, bool)> = BTreeMap::new();
     for (name, w, it) in faces {
@@ -211,5 +237,5 @@ pub async fn list_fonts(refresh: Option<bool>) -> Vec<FontFamily> {
 pub fn open_adobe_fonts(query: String) -> Result<(), String> {
     let q: String = query.chars().filter(|c| c.is_alphanumeric() || *c == ' ').collect();
     let url = format!("https://fonts.adobe.com/fonts?query={}", q.trim().replace(' ', "%20"));
-    std::process::Command::new("explorer").arg(url).spawn().map(|_| ()).map_err(|e| e.to_string())
+    crate::export::open_with_system(&url)
 }

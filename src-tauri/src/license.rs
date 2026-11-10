@@ -79,14 +79,25 @@ fn raw_machine_guid() -> Option<String> {
     Some(String::from_utf16_lossy(&buf[..n]))
 }
 
-#[cfg(not(windows))]
+/// macOS: IOPlatformUUID (UUID perangkat keras, tetap walau macOS diinstal ulang).
+#[cfg(target_os = "macos")]
+fn raw_machine_guid() -> Option<String> {
+    let out = std::process::Command::new("/usr/sbin/ioreg").args(["-rd1", "-c", "IOPlatformExpertDevice"]).output().ok()?;
+    let s = String::from_utf8_lossy(&out.stdout);
+    // baris:   "IOPlatformUUID" = "XXXXXXXX-XXXX-..."
+    s.lines().find(|l| l.contains("IOPlatformUUID")).and_then(|l| l.split('"').nth(3)).map(|x| x.to_string())
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn raw_machine_guid() -> Option<String> {
     std::fs::read_to_string("/etc/machine-id").ok()
 }
 
 /// ID komputer: hash dari MachineGuid Windows (ID asli tidak dikirim), format XXXX-XXXX-XXXX-XXXX.
 fn machine_id() -> String {
-    let raw = raw_machine_guid().unwrap_or_else(|| std::env::var("COMPUTERNAME").unwrap_or_default());
+    let raw = raw_machine_guid()
+        .filter(|x| !x.trim().is_empty())
+        .unwrap_or_else(|| std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default());
     let h = sha_hex(&format!("albumku|{}", raw.trim().to_lowercase()));
     h[..16].as_bytes().chunks(4).map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join("-")
 }

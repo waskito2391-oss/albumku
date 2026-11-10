@@ -72,7 +72,7 @@ export function FontPicker({ value, onChange }: { value: string; onChange: (name
             ))}
           </div>
           <div className="max-h-80 overflow-y-auto py-1">
-            {!fonts.length && <p className="px-3 py-4 text-center text-xs text-ink-400">Membaca font Windows…</p>}
+            {!fonts.length && <p className="px-3 py-4 text-center text-xs text-ink-400">Membaca font…</p>}
             {src === "adobe" && !adobeCount && fonts.length > 0 && (
               <p className="px-3 py-3 text-xs leading-relaxed text-ink-400">
                 Belum ada Adobe Fonts aktif. Buka Creative Cloud, aktifkan font di fonts.adobe.com, lalu tekan ⟳.

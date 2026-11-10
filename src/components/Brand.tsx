@@ -27,7 +27,7 @@ export function Logo({ size = 18, wordmark = true, className = "" }: { size?: nu
 const MODES: { v: ThemeMode; label: string; hint: string }[] = [
   { v: "dark", label: "Gelap", hint: "Nyaman untuk menilai foto" },
   { v: "light", label: "Terang", hint: "Ruangan terang / siang hari" },
-  { v: "system", label: "Ikuti Windows", hint: "Berubah mengikuti pengaturan Windows" },
+  { v: "system", label: "Ikuti sistem", hint: "Berubah mengikuti pengaturan Windows / macOS" },
 ];
 
 /** Pilihan tampilan gelap / terang / sistem. */

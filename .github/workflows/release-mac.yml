@@ -1,0 +1,44 @@
+# Build ALBUMKU untuk macOS (universal: Apple Silicon + Intel).
+# Dijalankan oleh scripts/release.mjs (gh workflow run); hasilnya diunduh lalu diunggah
+# ke repo rilis publik bersama installer Windows.
+name: release-mac
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      - name: Build (universal)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: npx tauri build --target universal-apple-darwin --bundles app,dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-bundle
+          if-no-files-found: error
+          path: |
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig

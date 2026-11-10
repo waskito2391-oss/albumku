@@ -710,7 +710,7 @@ export function Canvas() {
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="flex flex-col items-center gap-2 rounded-xl bg-ink-900/85 px-6 py-5 text-center ring-1 ring-ink-700">
             <ImagePlus className="text-accent" size={26} />
-            <p className="text-sm text-ink-100">Seret foto dari pustaka atau langsung dari Windows Explorer</p>
+            <p className="text-sm text-ink-100">Seret foto dari pustaka atau langsung dari Explorer / Finder</p>
             <p className="text-xs text-ink-400">Folder juga bisa. Atau pilih beberapa foto lalu klik "Isi ke halaman", atau pakai Auto Isi</p>
           </div>
         </div>

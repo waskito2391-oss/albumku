@@ -185,9 +185,16 @@ pub fn read_text(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn open_folder(path: String) -> Result<(), String> {
-    std::process::Command::new("explorer")
-        .arg(path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    open_with_system(&path)
+}
+
+/// Buka folder/URL dengan aplikasi bawaan sistem (Explorer / Finder / browser).
+pub fn open_with_system(target: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    let cmd = "explorer";
+    #[cfg(target_os = "macos")]
+    let cmd = "open";
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let cmd = "xdg-open";
+    std::process::Command::new(cmd).arg(target).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
