@@ -126,8 +126,20 @@ try {
   console.log(`Membuat repo publik ${REPO}…`);
   sh(`gh repo create ${REPO} --public --description "Installer & update ALBUMKU"`);
 }
+// halaman rilis: catatan + petunjuk download (latest.json hanya memuat catatan, untuk popup update)
+const page = [
+  notes,
+  "",
+  "## Download",
+  `- **Windows 10/11**: \`${exe}\``,
+  ...(mac ? [`- **macOS** (M1/M2/M3 & Intel): \`${conf.productName}_${version}_mac-universal.dmg\``] : []),
+  ...(mac
+    ? ["", "## Pertama kali buka di Mac", "1. Buka file `.dmg`, seret **ALBUMKU** ke folder **Applications**.", "2. Buka aplikasi **Terminal**, tempel perintah ini lalu tekan Enter:", "   ```", "   xattr -cr /Applications/ALBUMKU.app", "   ```", "3. Buka ALBUMKU dari Applications.", "", "Langkah 2 cukup sekali, karena aplikasi belum ditandatangani Apple. Update berikutnya masuk otomatis."]
+    : []),
+].join("
+");
 const notesFile = join(out, "notes.txt");
-writeFileSync(notesFile, notes);
+writeFileSync(notesFile, page);
 console.log(`Mengunggah rilis ${tag} ke ${REPO}…`);
 execSync(`gh release create ${tag} ${assets.map((a) => `"${join(out, a)}"`).join(" ")} --repo ${REPO} --title "Albumku ${version}" --notes-file "${notesFile}"`, { stdio: "inherit" });
 console.log(`\nSelesai. Aplikasi versi lama akan menawarkan update ke ${version}.`);
