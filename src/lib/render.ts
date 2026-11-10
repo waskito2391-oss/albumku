@@ -1,6 +1,7 @@
-import type { Cell, Fill, Format, Overlay, Page, Photo, Rect, TextItem } from "../types";
+import type { Cell, Fill, Format, Overlay, Page, Photo, Rect, TextItem, Watermark } from "../types";
 import { cellRect, docSize, mmToPx, panelCols, panelRows } from "./formats";
 import { drawFrame, pageFrameRects } from "./frames";
+import { drawWatermark } from "./watermark";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -14,6 +15,8 @@ export interface RenderOpts {
   /** geser asal (koordinat dokumen) — untuk merender satu potongan saja */
   offsetX?: number;
   offsetY?: number;
+  /** watermark global + logonya (bila mode gambar) */
+  watermark?: { wm: Watermark; image: CanvasImageSource | null };
 }
 
 export function rgba(hex: string, a: number) {
@@ -223,6 +226,7 @@ export function renderPage(ctx: Ctx, f: Format, page: Page, o: RenderOpts) {
     for (const r of pageFrameRects({ x: f.bleed, y: f.bleed, w: TW, h: TH }, f.spread && !pf.whole)) drawFrame(ctx, r, pf, fillStyle(ctx, pf.fill, r));
   }
   page.texts.forEach((t) => drawText(ctx, t, o.scale));
+  if (o.watermark) drawWatermark(ctx, f, o.watermark.wm, o.watermark.image);
 
   if (o.editor && o.guides) drawGuides(ctx, f, o.scale, W, H, TW, TH);
 }

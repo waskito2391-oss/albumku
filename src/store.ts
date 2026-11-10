@@ -11,7 +11,7 @@ export function emptyPage(f: Format, style?: Partial<Page>): Page {
   return { id: uid(), layoutId: null, cells: [], texts: [], overlays: [], ...defaultPageStyle(f), ...style };
 }
 
-export type Tab = "layout" | "text" | "gradient" | "frame" | "export";
+export type Tab = "layout" | "text" | "gradient" | "frame" | "watermark" | "export";
 
 interface State {
   project: Project | null;
@@ -32,6 +32,8 @@ interface State {
   importing: { done: number; total: number } | null;
   smartCrop: boolean;
   planner: boolean;
+  /** mode edit kotak foto (template manual) */
+  cellEdit: boolean;
   /** id palet aktif: preset, "photo" (dari foto halaman) atau "custom" (Paletku) */
   paletteId: string;
   customColors: string[];
@@ -56,7 +58,7 @@ let gestureBase: Project | null = null;
 let lastKey = "";
 let lastTime = 0;
 
-const clone = (p: Project): Project => ({ ...p, format: { ...p.format }, pages: structuredClone(p.pages) });
+const clone = (p: Project): Project => ({ ...p, format: { ...p.format }, pages: structuredClone(p.pages), watermark: p.watermark && { ...p.watermark } });
 
 export const useStore = create<State>((set, get) => ({
   project: null,
@@ -77,6 +79,7 @@ export const useStore = create<State>((set, get) => ({
   importing: null,
   smartCrop: true,
   planner: false,
+  cellEdit: false,
   paletteId: initialPalette.activeId,
   customColors: initialPalette.custom,
   photoColors: [],

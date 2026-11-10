@@ -1,4 +1,4 @@
-import { Crosshair, ImageOff, RotateCcw, RotateCw, ScanFace, Shuffle, Trash2 } from "../icons";
+import { BoundingBox, Copy, Crosshair, ImageOff, Plus, RotateCcw, RotateCw, Save, ScanFace, Shuffle, SplitH, SplitV, Trash2, X } from "../icons";
 import { memo, useEffect, useMemo, useState } from "react";
 import { useStore } from "../../store";
 import type { Layout, Photo } from "../../types";
@@ -6,6 +6,7 @@ import { layoutCount } from "../../lib/api";
 import { applyLayout, smartCropAll } from "../../lib/actions";
 import { pagePhotoIds, rankedLayouts, smartOffset } from "../../lib/fit";
 import { displayAspect, fromUnit, pageAspect, panelCols, panelRows, toUnit, unitOf } from "../../lib/formats";
+import { addCell, duplicateCell, gridCells, loadTemplates, makeTemplate, setCellRect, splitCell, storeTemplates, templateLayout, type MyTemplate } from "../../lib/celledit";
 import { Btn, Section, Seg, Slider, Toggle } from "../ui";
 
 const LayoutThumb = memo(function LayoutThumb({ l, disp, cols, rows }: { l: Layout; disp: number; cols: number; rows: number }) {
@@ -58,7 +59,24 @@ export function LayoutPanel() {
   const aspect = pageAspect(f, page.margin);
   const disp = displayAspect(f, page.margin);
   const smartCrop = useStore((s) => s.smartCrop);
+  const cellEdit = useStore((s) => s.cellEdit);
   const [cropMsg, setCropMsg] = useState("");
+  const [mine, setMine] = useState<MyTemplate[]>(loadTemplates);
+  const [tplName, setTplName] = useState("");
+  const [tplMsg, setTplMsg] = useState("");
+  const [gr, setGr] = useState({ rows: 2, cols: 2 });
+  const myList = mine.filter((t) => t.spread === f.spread);
+  const updMine = (list: MyTemplate[]) => {
+    setMine(list);
+    return storeTemplates(list);
+  };
+  const saveTpl = () => {
+    if (!page.cells.length) return;
+    const name = tplName.trim() || `Templateku ${mine.length + 1}`;
+    const ok = updMine([makeTemplate(page.cells, name, aspect, f.spread), ...mine]);
+    setTplName("");
+    setTplMsg(ok ? `"${name}" tersimpan di Templateku.` : "Gagal menyimpan template.");
+  };
 
   useEffect(() => {
     let alive = true;
@@ -206,6 +224,152 @@ export function LayoutPanel() {
           <Btn variant="soft" className="w-full" onClick={() => setShown(shown + 60)}>
             Tampilkan lebih banyak ({filtered.length - shown})
           </Btn>
+        )}
+      </Section>
+
+      <Section title="Template manual">
+        <Toggle label="Mode edit kotak" value={cellEdit} onChange={(v) => useStore.getState().set({ cellEdit: v })} />
+        {cellEdit && (
+          <>
+            <p className="text-[10px] leading-relaxed text-ink-400">
+              Seret kotak untuk memindah, tarik tepi/sudut untuk mengubah ukuran. Tepi otomatis menempel ke tepi halaman & kotak lain (tahan Alt agar bebas). Jarak antar foto ikut slider "Jarak antar foto".
+            </p>
+            <div className="grid grid-cols-2 gap-1">
+              <Btn variant="soft" onClick={addCell}>
+                <Plus size={13} /> Kotak baru
+              </Btn>
+              <Btn
+                variant="danger"
+                disabled={!page.cells.length}
+                onClick={() => {
+                  commit((p) => {
+                    p.pages[pageIdx].cells = [];
+                    p.pages[pageIdx].layoutId = null;
+                  });
+                  useStore.getState().select(null);
+                }}
+              >
+                <Trash2 size={13} /> Hapus semua
+              </Btn>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-ink-300">
+              <span>Grid</span>
+              <select value={gr.rows} onChange={(e) => setGr({ ...gr, rows: +e.target.value })} className="rounded bg-ink-800 px-1.5 py-1 text-ink-100 ring-1 ring-ink-600">
+                {[1, 2, 3, 4, 5, 6].map((k) => (
+                  <option key={k} value={k}>
+                    {k} baris
+                  </option>
+                ))}
+              </select>
+              <span>×</span>
+              <select value={gr.cols} onChange={(e) => setGr({ ...gr, cols: +e.target.value })} className="rounded bg-ink-800 px-1.5 py-1 text-ink-100 ring-1 ring-ink-600">
+                {[1, 2, 3, 4, 5, 6].map((k) => (
+                  <option key={k} value={k}>
+                    {k} kolom
+                  </option>
+                ))}
+              </select>
+              <Btn variant="soft" className="ml-auto" onClick={() => gridCells(gr.rows, gr.cols)}>
+                Pasang
+              </Btn>
+            </div>
+            {cell && sel?.kind === "cell" ? (
+              <div className="space-y-2 rounded-md bg-ink-800/60 p-2 ring-1 ring-ink-700">
+                <div className="text-[11px] text-ink-300">Kotak {sel.index + 1}</div>
+                <div className="grid grid-cols-4 gap-1">
+                  <Btn variant="soft" title="Bagi kiri-kanan" onClick={() => splitCell(sel.index, "v")}>
+                    <SplitV size={14} />
+                  </Btn>
+                  <Btn variant="soft" title="Bagi atas-bawah" onClick={() => splitCell(sel.index, "h")}>
+                    <SplitH size={14} />
+                  </Btn>
+                  <Btn variant="soft" title="Duplikat kotak" onClick={() => duplicateCell(sel.index)}>
+                    <Copy size={14} />
+                  </Btn>
+                  <Btn
+                    variant="danger"
+                    title="Hapus kotak"
+                    onClick={() => {
+                      commit((p) => {
+                        p.pages[pageIdx].cells.splice(sel.index, 1);
+                        p.pages[pageIdx].layoutId = null;
+                      });
+                      useStore.getState().select(null);
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </Btn>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {(
+                    [
+                      ["x", "X"],
+                      ["y", "Y"],
+                      ["w", "Lebar"],
+                      ["h", "Tinggi"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <label key={k} className="block text-[10px] text-ink-400">
+                      {label} %
+                      <input
+                        type="number"
+                        step={0.5}
+                        value={Math.round(cell[k] * 1000) / 10}
+                        onChange={(e) => e.target.value !== "" && setCellRect(sel.index, { [k]: +e.target.value / 100 }, k)}
+                        className="mt-0.5 w-full rounded bg-ink-900 px-1.5 py-1 text-xs tabular-nums text-ink-100 outline-none ring-1 ring-ink-600 focus:ring-accent"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-ink-400">Klik kotak di kanvas untuk membagi, menduplikat, atau mengatur ukuran persisnya.</p>
+            )}
+          </>
+        )}
+        <div className="flex gap-1.5">
+          <input
+            value={tplName}
+            onChange={(e) => setTplName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && saveTpl()}
+            placeholder={`Templateku ${mine.length + 1}`}
+            className="min-w-0 flex-1 rounded-md bg-ink-800 px-2.5 py-1.5 text-xs text-ink-100 outline-none ring-1 ring-ink-600 focus:ring-accent"
+          />
+          <Btn variant="soft" disabled={!page.cells.length} onClick={saveTpl} title="Simpan susunan kotak halaman ini sebagai template">
+            <Save size={13} /> Simpan
+          </Btn>
+        </div>
+        {tplMsg && <p className="text-[11px] text-ink-300">{tplMsg}</p>}
+        {myList.length > 0 ? (
+          <div className={`grid gap-2 ${disp > 2.2 ? "grid-cols-1" : disp > 1.2 ? "grid-cols-2" : "grid-cols-3"}`}>
+            {myList.map((t) => {
+              const l = templateLayout(t);
+              return (
+                <div key={t.id} className="group relative">
+                  <button
+                    onClick={() => applyLayout(pageIdx, l)}
+                    title={`${t.name} (${t.cells.length} foto)${Math.abs(t.aspect - aspect) > 0.05 ? " — dibuat untuk rasio halaman lain" : ""}`}
+                    className={`block w-full overflow-hidden rounded ring-1 transition ${page.layoutId === l.id ? "ring-2 ring-accent" : "ring-ink-600 hover:ring-accent/70"}`}
+                    style={{ aspectRatio: `${disp}` }}
+                  >
+                    <LayoutThumb l={l} disp={disp} cols={panelCols(f)} rows={panelRows(f)} />
+                  </button>
+                  <div className="mt-0.5 truncate text-[10px] text-ink-400">{t.name}</div>
+                  <button
+                    title="Hapus dari Templateku"
+                    onClick={() => updMine(mine.filter((x) => x.id !== t.id))}
+                    className="absolute right-1 top-1 hidden rounded bg-black/60 p-0.5 text-white hover:bg-red-500/80 group-hover:block"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="flex items-center gap-1.5 text-[11px] text-ink-400">
+            <BoundingBox size={13} /> Templateku masih kosong. Susun kotak lalu tekan Simpan.
+          </p>
         )}
       </Section>
 

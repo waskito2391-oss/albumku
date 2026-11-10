@@ -4,13 +4,16 @@ import { useStore } from "../store";
 import type { Page, Rect } from "../types";
 import { addToPage, setCellPhoto } from "../lib/actions";
 import { registerDropTarget } from "../lib/dnd";
-import { cellRect, docSize } from "../lib/formats";
+import { cellRect, contentRect, docSize } from "../lib/formats";
 import { getImg, onImageLoaded } from "../lib/images";
 import { fontString, photoPlacement, renderPage, textBox } from "../lib/render";
 import { smartOffset } from "../lib/fit";
+import { wmFont } from "../lib/watermark";
+import { dragCell, edgeCursor, edgesAt, type Edges } from "../lib/celledit";
 
 type Pt = { x: number; y: number };
 type Drag =
+  | { mode: "cell"; cell: number; e: Edges; sx: number; sy: number; r0: Rect }
   | { mode: "pan"; cell: number; sx: number; sy: number; ox: number; oy: number; slackX: number; slackY: number; th: number }
   | { mode: "move"; kind: "text" | "overlay"; id: string; sx: number; sy: number; x0: number; y0: number }
   | { mode: "resize"; kind: "text" | "overlay"; handle: "corner" | "edge"; id: string; sx: number; sy: number; w0: number; h0: number; fs0: number; rot: number };
@@ -37,8 +40,10 @@ export function Canvas() {
   const photos = useStore((s) => s.photos);
   const fontTick = useStore((s) => s.fontTick);
   const tab = useStore((s) => s.tab);
+  const cellEdit = useStore((s) => s.cellEdit) && tab === "layout";
   const f = project.format;
   const page = project.pages[pageIdx];
+  const wm = project.watermark;
   const photoMap = useMemo(() => new Map(photos.map((p) => [p.id, p])), [photos]);
 
   const wrap = useRef<HTMLDivElement>(null);
@@ -70,6 +75,16 @@ export function Canvas() {
     };
   }, [fontKey]);
 
+  const wmKey = wm?.on && wm.mode === "text" ? wmFont(wm, 40) : "";
+  useEffect(() => {
+    if (!wmKey) return;
+    let alive = true;
+    document.fonts.load(wmKey).catch(() => null).then(() => alive && setTick((x) => x + 1));
+    return () => {
+      alive = false;
+    };
+  }, [wmKey]);
+
   const toDoc = (e: { clientX: number; clientY: number }): Pt => {
     const r = cv.current!.getBoundingClientRect();
     return { x: (e.clientX - r.left) / cur.current.scale, y: (e.clientY - r.top) / cur.current.scale };
@@ -88,7 +103,14 @@ export function Canvas() {
     c.style.height = `${H * scale}px`;
     const ctx = c.getContext("2d")!;
     const s = scale * dpr;
-    renderPage(ctx, f, page, { scale: s, photos: photoMap, image: (p) => getImg(p.thumb), editor: true, guides });
+    renderPage(ctx, f, page, {
+      scale: s,
+      photos: photoMap,
+      image: (p) => getImg(p.thumb),
+      editor: true,
+      guides,
+      watermark: wm?.on ? { wm, image: wm.imagePath ? getImg(wm.imagePath) : null } : undefined,
+    });
 
     const lw = 2 / s;
     const hs = (9 * dpr) / s;
@@ -100,6 +122,26 @@ export function Canvas() {
       ctx.strokeRect(x - hs / 2, y - hs / 2, hs, hs);
     };
     ctx.save();
+    if (cellEdit) {
+      // mode edit kotak: semua kotak diberi garis + nomor supaya terlihat walau kosong/bertumpuk
+      ctx.setLineDash([6 / s, 4 / s]);
+      ctx.lineWidth = lw * 0.75;
+      ctx.font = `600 ${12 / scale}px "Segoe UI", sans-serif`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      page.cells.forEach((c, i) => {
+        const r = cellRect(f, page, c);
+        ctx.strokeStyle = "rgba(227,179,65,0.9)";
+        ctx.strokeRect(r.x, r.y, r.w, r.h);
+        const pad = 5 / scale;
+        const tw = ctx.measureText(String(i + 1)).width;
+        ctx.fillStyle = "rgba(20,20,24,0.75)";
+        ctx.fillRect(r.x + pad, r.y + pad, tw + 8 / scale, 16 / scale);
+        ctx.fillStyle = "#e3b341";
+        ctx.fillText(String(i + 1), r.x + pad + 4 / scale, r.y + pad + 2 / scale);
+      });
+      ctx.setLineDash([]);
+    }
     if (hover != null && page.cells[hover]) {
       const r = cellRect(f, page, page.cells[hover]);
       ctx.fillStyle = "rgba(227,179,65,0.28)";
@@ -114,6 +156,7 @@ export function Canvas() {
       ctx.strokeStyle = "#e3b341";
       ctx.lineWidth = lw * 1.5;
       ctx.strokeRect(r.x, r.y, r.w, r.h);
+      if (cellEdit) for (const [hx, hy] of [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [1, 0.5], [0, 1], [0.5, 1], [1, 1]]) handle(r.x + r.w * hx, r.y + r.h * hy);
       if (sc.photoId && (sc.rot ?? 0) % 90 !== 0) {
         // grid bantu meluruskan (garis horizon / tiang harus sejajar)
         ctx.strokeStyle = "rgba(255,255,255,0.55)";
@@ -155,7 +198,7 @@ export function Canvas() {
       }
     }
     ctx.restore();
-  }, [page, scale, sel, tick, guides, hover, photoMap, f, fontTick, W, H]);
+  }, [page, scale, sel, tick, guides, hover, photoMap, f, fontTick, W, H, wm, cellEdit]);
 
   /* ---------- zoom foto (scroll) & zoom tampilan (Ctrl+scroll) ---------- */
   useEffect(() => {
@@ -195,6 +238,18 @@ export function Canvas() {
       (e.target as Element).setPointerCapture(e.pointerId);
     };
 
+    // mode edit kotak: pegangan kotak terpilih didahulukan (boleh sedikit di luar kotak)
+    const cellDrag = (i: number, e: Edges) => {
+      st.select({ kind: "cell", index: i });
+      const c = page.cells[i];
+      begin({ mode: "cell", cell: i, e, sx: pt.x, sy: pt.y, r0: { x: c.x, y: c.y, w: c.w, h: c.h } });
+    };
+    const tol = 8 / scale;
+    if (cellEdit && sel?.kind === "cell" && page.cells[sel.index]) {
+      const e = edgesAt(pt, cellRect(f, page, page.cells[sel.index]), tol);
+      if (e && (e.l || e.r || e.t || e.b)) return cellDrag(sel.index, e);
+    }
+
     // pegangan resize pada objek terpilih
     if (sel?.kind === "text") {
       const t = page.texts.find((x) => x.id === sel.id);
@@ -233,6 +288,15 @@ export function Canvas() {
         }
       }
     }
+    if (cellEdit) {
+      // kotak paling atas yang kena (kotak boleh bertumpuk)
+      for (let i = page.cells.length - 1; i >= 0; i--) {
+        const e = edgesAt(pt, cellRect(f, page, page.cells[i]), tol);
+        if (e) return cellDrag(i, e);
+      }
+      st.select(null);
+      return;
+    }
     const ci = cellAt(pt);
     if (ci >= 0) {
       st.select({ kind: "cell", index: ci });
@@ -258,12 +322,29 @@ export function Canvas() {
         const b = textBox(t);
         return inRect(toLocal(pt, b, t.rotation), b);
       });
+      if (cellEdit && !overText) {
+        const tol = 8 / scale;
+        let e: Edges | null = null;
+        if (sel?.kind === "cell" && page.cells[sel.index]) e = edgesAt(pt, cellRect(f, page, page.cells[sel.index]), tol);
+        for (let i = page.cells.length - 1; i >= 0 && !e; i--) e = edgesAt(pt, cellRect(f, page, page.cells[i]), tol);
+        cv.current!.style.cursor = e ? edgeCursor(e) : "default";
+        return;
+      }
       cv.current!.style.cursor = overText ? "move" : cellAt(pt) >= 0 ? "grab" : "default";
       return;
     }
     const dx = pt.x - d.sx;
     const dy = pt.y - d.sy;
-    if (d.mode === "pan") {
+    if (d.mode === "cell") {
+      const cr = contentRect(f, page);
+      const others = page.cells.filter((_, i) => i !== d.cell);
+      // Alt = tanpa menempel
+      const r = dragCell(d.r0, dx / cr.w, dy / cr.h, d.e, others, 8 / scale / cr.w, 8 / scale / cr.h, !e.altKey);
+      st.live((p) => {
+        Object.assign(p.pages[idx].cells[d.cell], r);
+        p.pages[idx].layoutId = null;
+      });
+    } else if (d.mode === "pan") {
       const ci = cellAt(pt);
       if (ci >= 0 && ci !== d.cell) {
         // di atas sel lain -> mode tukar foto

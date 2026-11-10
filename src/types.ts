@@ -126,16 +126,42 @@ export interface Photo {
   faces?: Rect[];
 }
 
+export type WmPos = "tl" | "tc" | "tr" | "ml" | "mc" | "mr" | "bl" | "bc" | "br";
+
+/** Watermark global: berlaku di semua halaman (tiap slide/post untuk carousel & puzzle). */
+export interface Watermark {
+  on: boolean;
+  mode: "text" | "image";
+  text: string;
+  fontFamily: string;
+  weight: number;
+  color: string;
+  imagePath: string | null;
+  /** lebar watermark relatif sisi pendek halaman (0..1) */
+  size: number;
+  opacity: number;
+  rotation: number;
+  pos: WmPos;
+  /** ulang memenuhi halaman (pola) */
+  tile: boolean;
+  /** jarak antar ulangan relatif ukuran watermark */
+  gap: number;
+  /** jarak dari tepi relatif sisi pendek halaman */
+  margin: number;
+  shadow: boolean;
+}
+
 export interface Project {
   version: 1;
   name: string;
   format: Format;
   pages: Page[];
+  watermark?: Watermark;
 }
 
 export interface Layout {
   id: string;
-  kind: "grid" | "magazine" | "spread" | "spread-mag" | "split";
+  kind: "grid" | "magazine" | "spread" | "spread-mag" | "split" | "custom";
   cells: Rect[];
   blanks: Rect[];
 }

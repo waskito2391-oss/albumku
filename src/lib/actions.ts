@@ -7,6 +7,7 @@ import { assign, bestLayout, pagePhotoIds, smartOffset, toCells } from "./fit";
 import { docSize, tiles } from "./formats";
 import { loadFull } from "./images";
 import { renderPage } from "./render";
+import { wmFont } from "./watermark";
 
 const photoMap = () => new Map(useStore.getState().photos.map((p) => [p.id, p]));
 const IMG_FILTER = [{ name: "Foto", extensions: ["jpg", "jpeg", "png", "webp"] }];
@@ -239,6 +240,8 @@ export interface ExportOpts {
   bleed: boolean;
   split: boolean;
   pages: number[];
+  /** sertakan watermark proyek (bila aktif) */
+  watermark: boolean;
   onProgress: (done: number, total: number, msg: string) => void;
 }
 
@@ -263,6 +266,10 @@ export async function exportPages(o: ExportOpts) {
   const dpi = f.isPrint ? f.dpi : 72;
   const files: string[] = [];
   const pad = Math.max(2, String(p.pages.length).length);
+  const wm = o.watermark && p.watermark?.on ? p.watermark : null;
+  let wmImg: HTMLImageElement | null = null;
+  if (wm?.mode === "image" && wm.imagePath) wmImg = await loadFull(wm.imagePath);
+  if (wm?.mode === "text") await document.fonts.load(wmFont(wm, 40)).catch(() => null);
   if (o.kind === "pdf") await invoke("pdf_begin", { path: o.dir });
   let done = 0;
   for (const idx of o.pages) {
@@ -285,7 +292,7 @@ export async function exportPages(o: ExportOpts) {
       canvas.height = h;
       const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
       o.onProgress(done, o.pages.length, `Merender halaman ${idx + 1}${r.suffix}…`);
-      renderPage(ctx, f, page, { scale: o.scale, photos: map, image: (ph) => imgs.get(ph.id) ?? null, offsetX: r.x, offsetY: r.y });
+      renderPage(ctx, f, page, { scale: o.scale, photos: map, image: (ph) => imgs.get(ph.id) ?? null, offsetX: r.x, offsetY: r.y, watermark: wm ? { wm, image: wmImg } : undefined });
       const data = ctx.getImageData(0, 0, w, h).data;
       canvas.width = canvas.height = 0;
       const base = `${o.prefix}-${String(idx + 1).padStart(pad, "0")}${r.suffix}`;

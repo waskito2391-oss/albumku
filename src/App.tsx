@@ -1,5 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
-import { Download, FrameCorners, LayoutGrid, Palette, Type } from "./components/icons";
+import { Download, FrameCorners, LayoutGrid, Palette, Stamp, Type } from "./components/icons";
 import { FramePanel } from "./components/panels/FramePanel";
 import { useEffect } from "react";
 import { useStore, type Tab } from "./store";
@@ -16,12 +16,14 @@ import { ExportPanel } from "./components/panels/ExportPanel";
 import { GradientPanel } from "./components/panels/GradientPanel";
 import { LayoutPanel } from "./components/panels/LayoutPanel";
 import { TextPanel } from "./components/panels/TextPanel";
+import { WatermarkPanel } from "./components/panels/WatermarkPanel";
 
 const TABS: { v: Tab; label: string; icon: JSX.Element }[] = [
   { v: "layout", label: "Layout", icon: <LayoutGrid size={15} /> },
   { v: "text", label: "Teks", icon: <Type size={15} /> },
   { v: "gradient", label: "Gradient", icon: <Palette size={15} /> },
   { v: "frame", label: "Bingkai", icon: <FrameCorners size={15} /> },
+  { v: "watermark", label: "Watermark", icon: <Stamp size={15} /> },
   { v: "export", label: "Export", icon: <Download size={15} /> },
 ];
 
@@ -74,9 +76,13 @@ export default function App() {
           const pg = p.pages[i];
           if (sel.kind === "text") pg.texts = pg.texts.filter((t) => t.id !== sel.id);
           else if (sel.kind === "overlay") pg.overlays = pg.overlays.filter((o) => o.id !== sel.id);
-          else if (pg.cells[sel.index]) pg.cells[sel.index].photoId = null;
+          else if (st.cellEdit && st.tab === "layout") {
+            // mode edit kotak: hapus kotaknya, bukan hanya fotonya
+            pg.cells.splice(sel.index, 1);
+            pg.layoutId = null;
+          } else if (pg.cells[sel.index]) pg.cells[sel.index].photoId = null;
         });
-        if (sel.kind !== "cell") st.select(null);
+        if (sel.kind !== "cell" || (st.cellEdit && st.tab === "layout")) st.select(null);
       } else if (k === "pagedown" || (k === "arrowright" && !st.sel)) {
         st.setPage(Math.min(st.project.pages.length - 1, st.pageIdx + 1));
       } else if (k === "pageup" || (k === "arrowleft" && !st.sel)) {
@@ -99,7 +105,7 @@ export default function App() {
           <PageStrip />
         </main>
         <aside className="flex w-[330px] shrink-0 flex-col border-l border-ink-700/70 bg-ink-900">
-          <nav className="grid grid-cols-5 border-b border-ink-700/70">
+          <nav className="grid grid-cols-6 border-b border-ink-700/70">
             {TABS.map((t) => (
               <button
                 key={t.v}
@@ -116,6 +122,7 @@ export default function App() {
             {tab === "text" && <TextPanel />}
             {tab === "gradient" && <GradientPanel />}
             {tab === "frame" && <FramePanel />}
+            {tab === "watermark" && <WatermarkPanel />}
             {tab === "export" && <ExportPanel />}
           </div>
         </aside>

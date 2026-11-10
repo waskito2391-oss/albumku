@@ -18,6 +18,7 @@ export function ExportPanel() {
   const [scale, setScale] = useState(f.isPrint ? 1 : f.exportScale);
   const [bleed, setBleed] = useState(true);
   const [split, setSplit] = useState(false);
+  const [withWm, setWithWm] = useState(true);
   const [which, setWhich] = useState<"all" | "current">("all");
   const [dir, setDir] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,6 +69,7 @@ export function ExportPanel() {
         bleed: f.isPrint && bleed,
         split: f.spread && split,
         pages,
+        watermark: withWm,
         onProgress: (done, total, msg) => setProg({ done, total, msg }),
       });
       const folder = kind === "pdf" ? target.replace(/[\\/][^\\/]*$/, "") : target;
@@ -134,6 +136,7 @@ export function ExportPanel() {
         )}
         {f.isPrint && f.bleed > 0 && <Toggle label="Sertakan bleed (untuk lab cetak)" value={bleed} onChange={setBleed} />}
         {f.spread && <Toggle label="Pisah jadi halaman kiri & kanan" value={split} onChange={setSplit} />}
+        {project.watermark?.on && <Toggle label="Sertakan watermark" value={withWm} onChange={setWithWm} />}
         {!multi || project.pages.length > 1 ? (
           <Seg value={which} onChange={setWhich} options={[{ v: "all", label: "Semua halaman" }, { v: "current", label: "Halaman ini" }]} />
         ) : null}
