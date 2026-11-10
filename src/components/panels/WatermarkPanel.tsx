@@ -15,6 +15,7 @@ export function WatermarkPanel() {
   const project = useStore((s) => s.project)!;
   const fonts = useStore((s) => s.fonts);
   const commit = useStore((s) => s.commit);
+  const pageIdx = useStore((s) => s.pageIdx);
   const wm = project.watermark;
 
   const upd = (patch: Partial<Watermark>, key?: string) =>
@@ -50,7 +51,7 @@ export function WatermarkPanel() {
           </Btn>
         }
       >
-        <Toggle label="Tampilkan di semua halaman" value={wm.on} onChange={(on) => upd({ on })} />
+        <Toggle label="Tampilkan watermark" value={wm.on} onChange={(on) => upd({ on })} />
         <Seg
           value={wm.mode}
           onChange={(mode) => upd({ mode })}
@@ -108,6 +109,46 @@ export function WatermarkPanel() {
           <p className="text-[11px] leading-relaxed text-ink-400">Paling bagus pakai PNG dengan latar transparan.</p>
         </Section>
       )}
+
+      <Section title="Halaman">
+        <Seg
+          value={wm.scope ?? "all"}
+          onChange={(scope) => upd(scope === "pick" && !wm.pages?.length ? { scope, pages: [project.pages[pageIdx].id] } : { scope })}
+          options={[
+            { v: "all", label: "Semua halaman" },
+            { v: "pick", label: "Pilih halaman" },
+          ]}
+        />
+        {wm.scope === "pick" && (
+          <>
+            <div className="grid grid-cols-8 gap-1">
+              {project.pages.map((pg, i) => {
+                const on = !!wm.pages?.includes(pg.id);
+                return (
+                  <button
+                    key={pg.id}
+                    title={`Halaman ${i + 1}${on ? " (diberi watermark)" : ""}`}
+                    onClick={() => upd({ pages: on ? wm.pages!.filter((x) => x !== pg.id) : [...(wm.pages ?? []), pg.id] })}
+                    className={`rounded py-1 text-xs tabular-nums ring-1 ${on ? "bg-accent font-semibold text-on-accent ring-accent" : "bg-ink-800 text-ink-300 ring-ink-700 hover:text-ink-100"} ${i === pageIdx ? "outline outline-1 outline-offset-1 outline-ink-300" : ""}`}
+                  >
+                    {i + 1}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-1">
+              <Btn variant="soft" onClick={() => upd({ pages: project.pages.map((x) => x.id) })}>
+                Pilih semua
+              </Btn>
+              <Btn variant="soft" onClick={() => upd({ pages: [] })}>
+                Kosongkan
+              </Btn>
+              <span className="ml-auto text-[11px] tabular-nums text-ink-400">{project.pages.filter((x) => wm.pages?.includes(x.id)).length} halaman</span>
+            </div>
+            <p className="text-[10px] text-ink-400">Klik nomor halaman untuk memasang/melepas watermark. Kotak bergaris = halaman yang sedang dibuka.</p>
+          </>
+        )}
+      </Section>
 
       <Section title="Tampilan">
         <Slider label="Ukuran" min={0.05} max={1} step={0.01} value={wm.size} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(size) => upd({ size }, "size")} />

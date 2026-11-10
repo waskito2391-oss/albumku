@@ -3,7 +3,8 @@ import { useEffect, useRef } from "react";
 import { uid, useStore } from "../../store";
 import type { TextItem } from "../../types";
 import { docSize } from "../../lib/formats";
-import { TEXT_PRESETS, makeText } from "../../lib/presets";
+import { TEXT_COMBOS, TEXT_PRESETS, makeCombo, makeText, type TextCombo } from "../../lib/presets";
+import { textBox } from "../../lib/render";
 import { FontPicker } from "../FontPicker";
 import { GradientEditor } from "../GradientEditor";
 import { Btn, ColorInput, Empty, Section, Seg, Slider, Toggle } from "../ui";
@@ -35,6 +36,12 @@ export function TextPanel() {
     useStore.getState().select({ kind: "text", id });
   };
 
+  const addCombo = (c: TextCombo) => {
+    const items = makeCombo(f, fonts.map((x) => x.name), c, (t) => textBox({ ...t, id: "" }).h).map((t) => ({ ...t, id: uid() }));
+    commit((p) => void p.pages[pageIdx].texts.push(...items));
+    useStore.getState().select({ kind: "text", id: items[0].id });
+  };
+
   const upd = (patch: Partial<TextItem>, key?: string) =>
     t && commit((p) => {
       const x = p.pages[pageIdx].texts.find((y) => y.id === t.id);
@@ -62,6 +69,36 @@ export function TextPanel() {
         <Btn variant="soft" className="w-full" onClick={() => add()}>
           <Plus size={14} /> Teks kosong
         </Btn>
+      </Section>
+
+      <Section title="Template judul + isi">
+        <div className="grid grid-cols-2 gap-1.5">
+          {TEXT_COMBOS.map((c) => (
+            <button
+              key={c.name}
+              onClick={() => addCombo(c)}
+              className={`space-y-1 rounded-md bg-ink-800 px-2 py-2 ring-1 ring-ink-700 hover:ring-accent/60 ${c.align === "left" ? "text-left" : "text-center"}`}
+            >
+              {c.parts.map((p, i) => (
+                <div
+                  key={i}
+                  className={i === c.parts.length - 1 && c.parts.length > 1 && p.sizeRel < 0.03 ? "line-clamp-2 text-[9px] leading-tight text-ink-400" : "truncate text-ink-100"}
+                  style={{
+                    fontFamily: p.family.map((x) => `"${x}"`).join(","),
+                    fontStyle: p.t.italic ? "italic" : undefined,
+                    fontWeight: p.t.weight,
+                    fontSize: p.sizeRel >= 0.03 ? Math.min(15, 6 + p.sizeRel * 110) : undefined,
+                    letterSpacing: p.t.letterSpacing ? `${p.t.letterSpacing / 400}em` : undefined,
+                  }}
+                >
+                  {p.t.uppercase ? p.sample.toUpperCase() : p.sample}
+                </div>
+              ))}
+              <div className="pt-0.5 text-[10px] text-ink-500">{c.name}</div>
+            </button>
+          ))}
+        </div>
+        <p className="text-[10px] text-ink-400">Judul dan isi dibuat sebagai teks terpisah, jadi masing-masing bisa diedit, digeser, dan diganti font-nya.</p>
       </Section>
 
       {page.texts.length > 0 && (

@@ -1,26 +1,32 @@
 import { ImagePlus } from "./icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
-import type { Page, Rect } from "../types";
-import { addToPage, setCellPhoto } from "../lib/actions";
+import type { Cell, Page, Rect } from "../types";
+import { addToPage, setCellPhoto, setPageBackground } from "../lib/actions";
 import { registerDropTarget } from "../lib/dnd";
 import { cellRect, contentRect, docSize } from "../lib/formats";
 import { getImg, onImageLoaded } from "../lib/images";
-import { fontString, photoPlacement, renderPage, textBox } from "../lib/render";
+import { fontString, photoPlacement, placementFor, renderPage, textBox } from "../lib/render";
 import { smartOffset } from "../lib/fit";
 import { wmFont } from "../lib/watermark";
-import { dragCell, edgeCursor, edgesAt, type Edges } from "../lib/celledit";
+import { dragCell, edgeCursor, edgesAt, keepPhoto, type Edges, type SnapGuides } from "../lib/celledit";
 
 type Pt = { x: number; y: number };
 type Drag =
-  | { mode: "cell"; cell: number; e: Edges; sx: number; sy: number; r0: Rect }
-  | { mode: "pan"; cell: number; sx: number; sy: number; ox: number; oy: number; slackX: number; slackY: number; th: number }
+  | { mode: "cell"; cell: number; e: Edges; sx: number; sy: number; r0: Rect; c0: Cell }
+  | { mode: "rotate"; id: string; cx: number; cy: number; sx: number; sy: number }
+  | { mode: "pan"; cell: number; sx: number; sy: number; ox: number; oy: number; slackX: number; slackY: number; th: number; lock?: boolean }
+  | { mode: "pscale"; cell: number; sx: number; sy: number; cx: number; cy: number; d0: number; s0: number; iw: number; ih: number; rot: number }
   | { mode: "move"; kind: "text" | "overlay"; id: string; sx: number; sy: number; x0: number; y0: number }
-  | { mode: "resize"; kind: "text" | "overlay"; handle: "corner" | "edge"; id: string; sx: number; sy: number; w0: number; h0: number; fs0: number; rot: number };
+  | { mode: "resize"; kind: "text" | "overlay"; handle: "corner" | "edge"; id: string; sx: number; sy: number; w0: number; h0: number; fs0: number; rot: number; x0?: number; y0?: number };
 
 
 const inRect = (p: Pt, r: Rect) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+/** jarak pegangan putar overlay dari tepi atasnya (px layar) */
+const ROT_GAP = 28;
+/** posisi Y pegangan putar; pindah ke dalam kotak bila di atas tepi halaman (tidak bisa diklik) */
+const rotHandleY = (o: Rect, scale: number) => (o.y - ROT_GAP / scale >= 0 ? o.y - ROT_GAP / scale : o.y + ROT_GAP / scale);
 
 function toLocal(p: Pt, b: Rect, rot: number): Pt {
   const cx = b.x + b.w / 2;
@@ -51,6 +57,53 @@ export function Canvas() {
   const [box, setBox] = useState({ w: 900, h: 600 });
   const [tick, setTick] = useState(0);
   const [hover, setHover] = useState<number | null>(null);
+  const [snapG, setSnapG] = useState<SnapGuides | null>(null);
+  /** mode atur foto (klik 2x foto): sel yang fotonya sedang diatur ukuran & posisinya */
+  const [photoEdit, setPhotoEdit] = useState<number | null>(null);
+  useEffect(() => setPhotoEdit(null), [page.id, tab]);
+  useEffect(() => {
+    if (photoEdit === null) return;
+    const key = (e: KeyboardEvent) => (e.key === "Escape" || e.key === "Enter") && setPhotoEdit(null);
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [photoEdit]);
+  /** posisi foto utuh (termasuk bagian yang terpotong sel) dalam koordinat dokumen */
+  const photoGeom = (ci: number) => {
+    const c = page.cells[ci];
+    const ph = c?.photoId ? photoMap.get(c.photoId) : undefined;
+    if (!ph) return null;
+    const r = cellRect(f, page, c);
+    const p = photoPlacement(r, ph.width, ph.height, c);
+    return { c, ph, r, p, box: { x: p.cx - p.w / 2, y: p.cy - p.h / 2, w: p.w, h: p.h }, rot: c.rot ?? 0 };
+  };
+
+  /** menu klik kanan pada foto (posisi layar) */
+  const [menu, setMenu] = useState<{ x: number; y: number; cell: number } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const key = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", key);
+    window.addEventListener("wheel", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", key);
+      window.removeEventListener("wheel", close);
+    };
+  }, [menu]);
+
+  const onContext = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const ci = cellAt(toDoc(e));
+    if (ci < 0 || !page.cells[ci].photoId) return setMenu(null);
+    useStore.getState().select({ kind: "cell", index: ci });
+    setMenu({ x: e.clientX, y: e.clientY, cell: ci });
+  };
+  const menuAct = (fn: (idx: number, ci: number) => void) => () => {
+    if (menu) fn(useStore.getState().pageIdx, menu.cell);
+    setMenu(null);
+  };
   const drag = useRef<Drag | null>(null);
 
   const { W, H } = docSize(f);
@@ -122,6 +175,34 @@ export function Canvas() {
       ctx.strokeRect(x - hs / 2, y - hs / 2, hs, hs);
     };
     ctx.save();
+    const pe = photoEdit !== null ? photoGeom(photoEdit) : null;
+    if (pe) {
+      const im = getImg(pe.ph.thumb);
+      ctx.save();
+      // bagian foto yang terpotong sel ditampilkan samar
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.rect(pe.r.x, pe.r.y, pe.r.w, pe.r.h);
+      ctx.clip("evenodd");
+      ctx.translate(pe.p.cx, pe.p.cy);
+      ctx.rotate(pe.p.th);
+      if (im) {
+        ctx.globalAlpha = 0.4;
+        ctx.drawImage(im, -pe.p.w / 2, -pe.p.h / 2, pe.p.w, pe.p.h);
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.translate(pe.p.cx, pe.p.cy);
+      ctx.rotate(pe.p.th);
+      ctx.strokeStyle = "#4da3ff";
+      ctx.lineWidth = lw;
+      ctx.strokeRect(-pe.p.w / 2, -pe.p.h / 2, pe.p.w, pe.p.h);
+      for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) handle((a * pe.p.w) / 2, (b * pe.p.h) / 2);
+      ctx.restore();
+      ctx.strokeStyle = "#4da3ff";
+      ctx.lineWidth = lw * 1.5;
+      ctx.strokeRect(pe.r.x, pe.r.y, pe.r.w, pe.r.h);
+    }
     if (cellEdit) {
       // mode edit kotak: semua kotak diberi garis + nomor supaya terlihat walau kosong/bertumpuk
       ctx.setLineDash([6 / s, 4 / s]);
@@ -141,6 +222,32 @@ export function Canvas() {
         ctx.fillText(String(i + 1), r.x + pad + 4 / scale, r.y + pad + 2 / scale);
       });
       ctx.setLineDash([]);
+      if (snapG) {
+        const cr = contentRect(f, page);
+        // garis tengah halaman (samar) + garis yang sedang sejajar (tegas)
+        ctx.lineWidth = lw * 0.75;
+        ctx.strokeStyle = "rgba(255,0,170,0.35)";
+        ctx.setLineDash([4 / s, 4 / s]);
+        ctx.beginPath();
+        ctx.moveTo(cr.x + cr.w / 2, cr.y);
+        ctx.lineTo(cr.x + cr.w / 2, cr.y + cr.h);
+        ctx.moveTo(cr.x, cr.y + cr.h / 2);
+        ctx.lineTo(cr.x + cr.w, cr.y + cr.h / 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.lineWidth = lw;
+        ctx.strokeStyle = "#ff00aa";
+        ctx.beginPath();
+        for (const gx of snapG.gx) {
+          ctx.moveTo(cr.x + gx * cr.w, 0);
+          ctx.lineTo(cr.x + gx * cr.w, H);
+        }
+        for (const gy of snapG.gy) {
+          ctx.moveTo(0, cr.y + gy * cr.h);
+          ctx.lineTo(W, cr.y + gy * cr.h);
+        }
+        ctx.stroke();
+      }
     }
     if (hover != null && page.cells[hover]) {
       const r = cellRect(f, page, page.cells[hover]);
@@ -189,16 +296,32 @@ export function Canvas() {
     if (sel?.kind === "overlay") {
       const o = page.overlays.find((x) => x.id === sel.id);
       if (o) {
+        const cx = o.x + o.w / 2;
+        const cy = o.y + o.h / 2;
+        ctx.translate(cx, cy);
+        ctx.rotate(((o.rotation ?? 0) * Math.PI) / 180);
+        ctx.translate(-cx, -cy);
         ctx.strokeStyle = "#e3b341";
         ctx.lineWidth = lw;
         ctx.setLineDash([6 / s, 4 / s]);
         ctx.strokeRect(o.x, o.y, o.w, o.h);
         ctx.setLineDash([]);
         handle(o.x + o.w, o.y + o.h);
+        // pegangan putar di atas tengah
+        const ry = rotHandleY(o, scale);
+        ctx.beginPath();
+        ctx.moveTo(cx, o.y);
+        ctx.lineTo(cx, ry);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, ry, hs * 0.65, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.stroke();
       }
     }
     ctx.restore();
-  }, [page, scale, sel, tick, guides, hover, photoMap, f, fontTick, W, H, wm, cellEdit]);
+  }, [page, scale, sel, tick, guides, hover, photoMap, f, fontTick, W, H, wm, cellEdit, snapG, photoEdit]);
 
   /* ---------- zoom foto (scroll) & zoom tampilan (Ctrl+scroll) ---------- */
   useEffect(() => {
@@ -238,11 +361,25 @@ export function Canvas() {
       (e.target as Element).setPointerCapture(e.pointerId);
     };
 
+    // mode atur foto: tarik sudut = ubah ukuran foto, seret di dalam foto = geser; klik di luar = selesai
+    if (photoEdit !== null) {
+      const g = photoGeom(photoEdit);
+      if (g) {
+        const lp = toLocal(pt, g.box, g.rot);
+        const tol = 12 / scale;
+        const corner = [[0, 0], [1, 0], [0, 1], [1, 1]].some(([a, b]) => Math.hypot(lp.x - (g.box.x + a * g.box.w), lp.y - (g.box.y + b * g.box.h)) < tol);
+        if (corner)
+          return begin({ mode: "pscale", cell: photoEdit, sx: pt.x, sy: pt.y, cx: g.p.cx, cy: g.p.cy, d0: Math.max(1e-6, Math.hypot(pt.x - g.p.cx, pt.y - g.p.cy)), s0: g.p.w / g.ph.width, iw: g.ph.width, ih: g.ph.height, rot: g.rot });
+        if (inRect(lp, g.box)) return begin({ mode: "pan", cell: photoEdit, sx: pt.x, sy: pt.y, ox: g.c.ox, oy: g.c.oy, slackX: g.p.slackX, slackY: g.p.slackY, th: g.p.th, lock: true });
+      }
+      setPhotoEdit(null);
+    }
+
     // mode edit kotak: pegangan kotak terpilih didahulukan (boleh sedikit di luar kotak)
     const cellDrag = (i: number, e: Edges) => {
       st.select({ kind: "cell", index: i });
       const c = page.cells[i];
-      begin({ mode: "cell", cell: i, e, sx: pt.x, sy: pt.y, r0: { x: c.x, y: c.y, w: c.w, h: c.h } });
+      begin({ mode: "cell", cell: i, e, sx: pt.x, sy: pt.y, r0: { x: c.x, y: c.y, w: c.w, h: c.h }, c0: { ...c } });
     };
     const tol = 8 / scale;
     if (cellEdit && sel?.kind === "cell" && page.cells[sel.index]) {
@@ -266,8 +403,14 @@ export function Canvas() {
     }
     if (sel?.kind === "overlay") {
       const o = page.overlays.find((x) => x.id === sel.id);
-      if (o && Math.hypot(pt.x - (o.x + o.w), pt.y - (o.y + o.h)) < 14 / scale)
-        return begin({ mode: "resize", kind: "overlay", handle: "corner", id: o.id, sx: pt.x, sy: pt.y, w0: o.w, h0: o.h, fs0: 0, rot: 0 });
+      if (o) {
+        const rot = o.rotation ?? 0;
+        const lp = toLocal(pt, o, rot);
+        if (Math.hypot(lp.x - (o.x + o.w / 2), lp.y - rotHandleY(o, scale)) < 12 / scale)
+          return begin({ mode: "rotate", id: o.id, cx: o.x + o.w / 2, cy: o.y + o.h / 2, sx: pt.x, sy: pt.y });
+        if (Math.hypot(lp.x - (o.x + o.w), lp.y - (o.y + o.h)) < 14 / scale)
+          return begin({ mode: "resize", kind: "overlay", handle: "corner", id: o.id, sx: pt.x, sy: pt.y, w0: o.w, h0: o.h, fs0: 0, rot, x0: o.x, y0: o.y });
+      }
     }
     for (let i = page.texts.length - 1; i >= 0; i--) {
       const t = page.texts[i];
@@ -282,7 +425,7 @@ export function Canvas() {
     if (tab === "gradient") {
       for (let i = page.overlays.length - 1; i >= 0; i--) {
         const o = page.overlays[i];
-        if (inRect(pt, o)) {
+        if (inRect(toLocal(pt, o, o.rotation ?? 0), o)) {
           st.select({ kind: "overlay", id: o.id });
           return begin({ mode: "move", kind: "overlay", id: o.id, sx: pt.x, sy: pt.y, x0: o.x, y0: o.y });
         }
@@ -317,6 +460,16 @@ export function Canvas() {
     const pt = toDoc(e);
     const st = useStore.getState();
     const idx = st.pageIdx;
+    if (!d && photoEdit !== null) {
+      const g = photoGeom(photoEdit);
+      if (g) {
+        const lp = toLocal(pt, g.box, g.rot);
+        const tol = 12 / scale;
+        const corner = [[0, 0], [1, 0], [0, 1], [1, 1]].some(([a, b]) => Math.hypot(lp.x - (g.box.x + a * g.box.w), lp.y - (g.box.y + b * g.box.h)) < tol);
+        cv.current!.style.cursor = corner ? "nwse-resize" : inRect(lp, g.box) ? "move" : "default";
+        return;
+      }
+    }
     if (!d) {
       const overText = page.texts.some((t) => {
         const b = textBox(t);
@@ -339,14 +492,37 @@ export function Canvas() {
       const cr = contentRect(f, page);
       const others = page.cells.filter((_, i) => i !== d.cell);
       // Alt = tanpa menempel
-      const r = dragCell(d.r0, dx / cr.w, dy / cr.h, d.e, others, 8 / scale / cr.w, 8 / scale / cr.h, !e.altKey);
+      const { r, guides: g } = dragCell(d.r0, dx / cr.w, dy / cr.h, d.e, others, 8 / scale / cr.w, 8 / scale / cr.h, !e.altKey);
+      setSnapG(g);
+      // ubah ukuran = memotong foto (ukuran & posisi foto di halaman tetap); geser = foto ikut pindah
+      const resize = d.e.l || d.e.r || d.e.t || d.e.b;
+      const keep = resize ? keepPhoto(f, page, d.c0, r) : {};
       st.live((p) => {
-        Object.assign(p.pages[idx].cells[d.cell], r);
+        Object.assign(p.pages[idx].cells[d.cell], r, keep);
         p.pages[idx].layoutId = null;
+      });
+    } else if (d.mode === "pscale") {
+      // skala foto mengikuti jarak mouse dari pusat foto (pusat foto tetap)
+      const s = (d.s0 * Math.hypot(pt.x - d.cx, pt.y - d.cy)) / d.d0;
+      cv.current!.style.cursor = "nwse-resize";
+      st.live((p) => {
+        const pg = p.pages[idx];
+        const c = pg.cells[d.cell];
+        if (c) Object.assign(c, placementFor(cellRect(f, pg, c), d.iw, d.ih, d.rot, { cx: d.cx, cy: d.cy, s }));
+      });
+    } else if (d.mode === "rotate") {
+      let a = (Math.atan2(pt.y - d.cy, pt.x - d.cx) * 180) / Math.PI + 90;
+      if (e.shiftKey) a = Math.round(a / 15) * 15;
+      else if (Math.abs(a - Math.round(a / 90) * 90) < 3) a = Math.round(a / 90) * 90; // menempel ke 0/90/180
+      a = ((((a + 180) % 360) + 360) % 360) - 180;
+      cv.current!.style.cursor = "grabbing";
+      st.live((p) => {
+        const o = p.pages[idx].overlays.find((x) => x.id === d.id);
+        if (o) o.rotation = Math.round(a * 10) / 10;
       });
     } else if (d.mode === "pan") {
       const ci = cellAt(pt);
-      if (ci >= 0 && ci !== d.cell) {
+      if (!d.lock && ci >= 0 && ci !== d.cell) {
         // di atas sel lain -> mode tukar foto
         if (hover !== ci) setHover(ci);
         st.live((p) => {
@@ -394,8 +570,18 @@ export function Canvas() {
         } else {
           const o = pg.overlays.find((x) => x.id === d.id);
           if (o) {
-            o.w = Math.max(20, d.w0 + dx);
-            o.h = Math.max(20, d.h0 + dy);
+            // gerakan mouse diterjemahkan ke sumbu overlay; sudut kiri-atas (lokal) tetap di tempat
+            const th = (d.rot * Math.PI) / 180;
+            const cs = Math.cos(th);
+            const sn = Math.sin(th);
+            const w = Math.max(20, d.w0 + dx * cs + dy * sn);
+            const h = Math.max(20, d.h0 - dx * sn + dy * cs);
+            const tlx = d.x0! + d.w0 / 2 - (d.w0 / 2) * cs + (d.h0 / 2) * sn;
+            const tly = d.y0! + d.h0 / 2 - (d.w0 / 2) * sn - (d.h0 / 2) * cs;
+            o.x = tlx + (w / 2) * cs - (h / 2) * sn - w / 2;
+            o.y = tly + (w / 2) * sn + (h / 2) * cs - h / 2;
+            o.w = w;
+            o.h = h;
           }
         }
       });
@@ -420,6 +606,7 @@ export function Canvas() {
       st.select({ kind: "cell", index: to });
     }
     setHover(null);
+    setSnapG(null);
     if (d) st.endGesture();
   };
 
@@ -429,10 +616,11 @@ export function Canvas() {
       st.set({ tab: "text", focusText: Date.now() });
       return;
     }
+    if (photoEdit !== null) return setPhotoEdit(null);
     const ci = cellAt(toDoc(e));
-    if (ci >= 0) {
-      const idx = st.pageIdx;
-      st.commit((p) => Object.assign(p.pages[idx].cells[ci], { zoom: 1, ox: 0, oy: 0 }));
+    if (ci >= 0 && page.cells[ci].photoId) {
+      st.select({ kind: "cell", index: ci });
+      setPhotoEdit(ci);
     }
   };
 
@@ -478,8 +666,46 @@ export function Canvas() {
           onPointerUp={onUp}
           onPointerCancel={onUp}
           onDoubleClick={onDouble}
+          onContextMenu={onContext}
         />
       </div>
+      {menu && (
+        <div
+          className="fixed z-50 min-w-[200px] overflow-hidden rounded-md bg-ink-800 py-1 text-xs text-ink-100 shadow-xl ring-1 ring-ink-600"
+          style={{ left: menu.x, top: menu.y }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {(
+            [
+              ["Jadikan background halaman", (idx: number, ci: number) => {
+                const id = useStore.getState().project!.pages[idx].cells[ci]?.photoId;
+                if (id) setPageBackground(idx, id);
+              }],
+              ["Jadikan background & kosongkan sel", (idx: number, ci: number) => {
+                const st = useStore.getState();
+                const id = st.project!.pages[idx].cells[ci]?.photoId;
+                if (!id) return;
+                st.commit((p) => {
+                  const pg = p.pages[idx];
+                  pg.bgPhoto = { opacity: 1, blur: 0, ...pg.bgPhoto, photoId: id };
+                  pg.cells[ci].photoId = null;
+                });
+              }],
+              ["Pusatkan foto", (idx: number, ci: number) => {
+                const st = useStore.getState();
+                st.commit((p) => Object.assign(p.pages[idx].cells[ci], { zoom: 1, ox: 0, oy: 0, rot: 0 }));
+              }],
+              ["Kosongkan sel", (idx: number, ci: number) => {
+                useStore.getState().commit((p) => void (p.pages[idx].cells[ci].photoId = null));
+              }],
+            ] as const
+          ).map(([label, fn]) => (
+            <button key={label} onClick={menuAct(fn)} className="block w-full px-3 py-1.5 text-left hover:bg-accent-soft hover:text-accent">
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       {empty && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="flex flex-col items-center gap-2 rounded-xl bg-ink-900/85 px-6 py-5 text-center ring-1 ring-ink-700">

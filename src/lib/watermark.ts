@@ -1,4 +1,4 @@
-import type { Format, Rect, Watermark } from "../types";
+import type { Format, Page, Rect, Watermark } from "../types";
 import { docSize, panelCols, panelRows } from "./formats";
 
 type Ctx = CanvasRenderingContext2D;
@@ -22,6 +22,9 @@ export function defaultWatermark(fontFamily = "Segoe UI"): Watermark {
     shadow: true,
   };
 }
+
+/** Apakah halaman ini diberi watermark. */
+export const wmOnPage = (wm: Watermark, page: Page) => wm.on && (wm.scope !== "pick" || !!wm.pages?.includes(page.id));
 
 export const wmFont = (wm: Watermark, size: number) => `${wm.weight} ${size}px "${wm.fontFamily}", "Segoe UI", sans-serif`;
 

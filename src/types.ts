@@ -75,6 +75,16 @@ export interface Overlay {
   fill: Fill;
   opacity: number;
   radius: number;
+  /** rotasi overlay (derajat) di sekitar titik tengahnya */
+  rotation?: number;
+}
+
+/** Foto sebagai background halaman (menutup seluruh halaman, di bawah semua foto). */
+export interface BgPhoto {
+  photoId: string;
+  opacity: number;
+  /** 0..1 relatif sisi pendek halaman */
+  blur: number;
 }
 
 export interface Page {
@@ -84,6 +94,7 @@ export interface Page {
   texts: TextItem[];
   overlays: Overlay[];
   bg: Fill;
+  bgPhoto?: BgPhoto | null;
   gutter: number;
   margin: number;
   radius: number;
@@ -149,6 +160,10 @@ export interface Watermark {
   /** jarak dari tepi relatif sisi pendek halaman */
   margin: number;
   shadow: boolean;
+  /** "all" = semua halaman, "pick" = hanya halaman di `pages` */
+  scope?: "all" | "pick";
+  /** id halaman yang diberi watermark (scope "pick") */
+  pages?: string[];
 }
 
 export interface Project {

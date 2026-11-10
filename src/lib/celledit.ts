@@ -1,5 +1,7 @@
-import type { Cell, Layout, Rect } from "../types";
+import type { Cell, Format, Layout, Page, Rect } from "../types";
 import { uid, useStore } from "../store";
+import { cellRect } from "./formats";
+import { photoPlacement, placementFor } from "./render";
 
 /* ---------- edit kotak foto (template manual) ---------- */
 
@@ -8,6 +10,17 @@ export const MIN_CELL = 0.04;
 export type Edges = { l: boolean; r: boolean; t: boolean; b: boolean };
 
 const blankCell = (r: Rect): Cell => ({ ...r, photoId: null, zoom: 1, ox: 0, oy: 0, rot: 0 });
+
+/**
+ * Zoom & geser baru untuk foto di sel `before` setelah sel diubah ke `after`, supaya foto
+ * tetap di ukuran & posisi yang sama di halaman (mengubah sel = memotong foto, bukan menskalakan).
+ */
+export function keepPhoto(f: Format, page: Page, before: Cell, after: Rect): Partial<Cell> {
+  const ph = before.photoId ? useStore.getState().photos.find((p) => p.id === before.photoId) : undefined;
+  if (!ph) return {};
+  const p0 = photoPlacement(cellRect(f, page, before), ph.width, ph.height, before);
+  return placementFor(cellRect(f, page, { ...before, ...after }), ph.width, ph.height, before.rot ?? 0, { cx: p0.cx, cy: p0.cy, s: p0.w / ph.width });
+}
 
 function edit(fn: (cells: Cell[]) => void) {
   const s = useStore.getState();
@@ -27,19 +40,53 @@ export function addCell() {
 
 /** Bagi kotak jadi dua: "v" = kiri-kanan, "h" = atas-bawah. */
 export function splitCell(i: number, dir: "v" | "h") {
+  const s = useStore.getState();
+  const p = s.project!;
+  const page = p.pages[s.pageIdx];
   edit((cs) => {
     const c = cs[i];
     if (!c) return;
-    if (dir === "v") {
-      const w = c.w / 2;
-      c.w = w;
-      cs.splice(i + 1, 0, blankCell({ x: c.x + w, y: c.y, w, h: c.h }));
-    } else {
-      const h = c.h / 2;
-      c.h = h;
-      cs.splice(i + 1, 0, blankCell({ x: c.x, y: c.y + h, w: c.w, h }));
-    }
+    const half = dir === "v" ? { x: c.x, y: c.y, w: c.w / 2, h: c.h } : { x: c.x, y: c.y, w: c.w, h: c.h / 2 };
+    const keep = keepPhoto(p.format, page, c, half);
+    Object.assign(c, half, keep);
+    cs.splice(i + 1, 0, blankCell(dir === "v" ? { x: c.x + half.w, y: c.y, w: half.w, h: c.h } : { x: c.x, y: c.y + half.h, w: c.w, h: half.h }));
   });
+}
+
+/**
+ * Hapus kolom ("col") atau baris ("row") tempat kotak i berada: semua kotak yang seluruhnya
+ * berada dalam rentang kotak itu dibuang, lalu ruangnya dirapatkan dan sisa kotak melebar memenuhi halaman.
+ * Kotak yang melintasi rentang tersebut (mis. kotak lebar 2 kolom) ikut menyempit.
+ */
+export function removeLine(i: number, axis: "col" | "row") {
+  const s = useStore.getState();
+  const ref = s.project?.pages[s.pageIdx].cells[i];
+  if (!ref) return 0;
+  const P = axis === "col" ? "x" : "y";
+  const S = axis === "col" ? "w" : "h";
+  const a = ref[P];
+  const b = ref[P] + ref[S];
+  const gap = b - a;
+  const E = 1e-4;
+  let removed = 0;
+  edit((cs) => {
+    const keep = cs.filter((c) => !(c[P] >= a - E && c[P] + c[S] <= b + E));
+    removed = cs.length - keep.length;
+    // jika tidak ada sisa, atau kolom selebar halaman, cukup buang kotaknya
+    const k = gap < 1 - E ? 1 / (1 - gap) : 0;
+    const map = (v: number) => (v <= a ? v : v >= b ? v - gap : a) * k;
+    const out = keep
+      .map((c) => {
+        if (!k) return c;
+        const p0 = map(c[P]);
+        const p1 = map(c[P] + c[S]);
+        return { ...c, [P]: p0, [S]: p1 - p0 };
+      })
+      .filter((c) => c[S] >= MIN_CELL - E);
+    cs.splice(0, cs.length, ...out);
+  });
+  s.select(null);
+  return removed;
 }
 
 export function duplicateCell(i: number) {
@@ -71,11 +118,14 @@ export function setCellRect(i: number, patch: Partial<Rect>, key: string) {
   s.commit((p) => {
     const c = p.pages[idx].cells[i];
     if (!c) return;
+    const before = { ...c };
     Object.assign(c, patch);
     c.w = Math.min(Math.max(MIN_CELL, c.w), 1);
     c.h = Math.min(Math.max(MIN_CELL, c.h), 1);
     c.x = Math.min(Math.max(0, c.x), 1 - c.w);
     c.y = Math.min(Math.max(0, c.y), 1 - c.h);
+    // ubah ukuran: foto tetap di tempat; geser posisi: foto ikut pindah bersama sel
+    if (before.w !== c.w || before.h !== c.h) Object.assign(c, keepPhoto(p.format, p.pages[idx], before, c));
     p.pages[idx].layoutId = null;
   }, `cr-${key}-${i}`);
 }
@@ -111,34 +161,53 @@ function snap(v: number, targets: number[], tol: number) {
   return { v: best, d: d < tol ? d : Infinity };
 }
 
+/** Garis bantu yang sedang "kena" (koordinat 0..1 area isi). */
+export interface SnapGuides {
+  gx: number[];
+  gy: number[];
+}
+
 /**
  * Posisi kotak baru setelah diseret (koordinat 0..1 area isi).
- * Tepi menempel ke tepi halaman, garis tengah, dan tepi kotak lain bila cukup dekat.
+ * Tepi & titik tengah kotak menempel ke tepi/tengah halaman dan tepi/tengah kotak lain bila cukup dekat.
+ * Ikut dikembalikan: garis bantu yang sedang sejajar, untuk digambar di kanvas.
  */
-export function dragCell(r0: Rect, dx: number, dy: number, e: Edges, others: Rect[], tolX: number, tolY: number, snapOn: boolean): Rect {
-  const xs = snapOn ? [0, 0.5, 1, ...others.flatMap((o) => [o.x, o.x + o.w])] : [];
-  const ys = snapOn ? [0, 0.5, 1, ...others.flatMap((o) => [o.y, o.y + o.h])] : [];
+export function dragCell(r0: Rect, dx: number, dy: number, e: Edges, others: Rect[], tolX: number, tolY: number, snapOn: boolean): { r: Rect; guides: SnapGuides } {
+  const xs = snapOn ? [0, 0.5, 1, ...others.flatMap((o) => [o.x, o.x + o.w / 2, o.x + o.w])] : [];
+  const ys = snapOn ? [0, 0.5, 1, ...others.flatMap((o) => [o.y, o.y + o.h / 2, o.y + o.h])] : [];
   const move = !e.l && !e.r && !e.t && !e.b;
+  let r: Rect;
   if (move) {
-    let x = r0.x + dx;
-    let y = r0.y + dy;
-    const a = snap(x, xs, tolX);
-    const b = snap(x + r0.w, xs, tolX);
-    x = a.d <= b.d ? (a.d < Infinity ? a.v : x) : b.v - r0.w;
-    const c = snap(y, ys, tolY);
-    const d = snap(y + r0.h, ys, tolY);
-    y = c.d <= d.d ? (c.d < Infinity ? c.v : y) : d.v - r0.h;
-    return { x: Math.min(Math.max(0, x), 1 - r0.w), y: Math.min(Math.max(0, y), 1 - r0.h), w: r0.w, h: r0.h };
+    // pilih yang paling dekat di antara tepi kiri, tengah, dan tepi kanan (begitu juga vertikal)
+    const pick = (p: number, size: number, ts: number[], tol: number) => {
+      const c = [snap(p, ts, tol), snap(p + size / 2, ts, tol), snap(p + size, ts, tol)];
+      const k = c.reduce((bi, s, i) => (s.d < c[bi].d ? i : bi), 0);
+      return c[k].d < Infinity ? c[k].v - (size / 2) * k : p;
+    };
+    const x = pick(r0.x + dx, r0.w, xs, tolX);
+    const y = pick(r0.y + dy, r0.h, ys, tolY);
+    r = { x: Math.min(Math.max(0, x), 1 - r0.w), y: Math.min(Math.max(0, y), 1 - r0.h), w: r0.w, h: r0.h };
+  } else {
+    let x0 = r0.x;
+    let x1 = r0.x + r0.w;
+    let y0 = r0.y;
+    let y1 = r0.y + r0.h;
+    if (e.l) x0 = Math.min(Math.max(0, snap(x0 + dx, xs, tolX).v), x1 - MIN_CELL);
+    if (e.r) x1 = Math.max(Math.min(1, snap(x1 + dx, xs, tolX).v), x0 + MIN_CELL);
+    if (e.t) y0 = Math.min(Math.max(0, snap(y0 + dy, ys, tolY).v), y1 - MIN_CELL);
+    if (e.b) y1 = Math.max(Math.min(1, snap(y1 + dy, ys, tolY).v), y0 + MIN_CELL);
+    r = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }
-  let x0 = r0.x;
-  let x1 = r0.x + r0.w;
-  let y0 = r0.y;
-  let y1 = r0.y + r0.h;
-  if (e.l) x0 = Math.min(Math.max(0, snap(x0 + dx, xs, tolX).v), x1 - MIN_CELL);
-  if (e.r) x1 = Math.max(Math.min(1, snap(x1 + dx, xs, tolX).v), x0 + MIN_CELL);
-  if (e.t) y0 = Math.min(Math.max(0, snap(y0 + dy, ys, tolY).v), y1 - MIN_CELL);
-  if (e.b) y1 = Math.max(Math.min(1, snap(y1 + dy, ys, tolY).v), y0 + MIN_CELL);
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  // garis bantu: target yang tepat sejajar dengan tepi/tengah kotak (tepi halaman tidak perlu digambar)
+  const E = 1e-6;
+  const hit = (ts: number[], vs: number[]) => [...new Set(ts.filter((t) => t > E && t < 1 - E && vs.some((v) => Math.abs(v - t) < E)))];
+  return {
+    r,
+    guides: {
+      gx: hit(xs, [r.x, r.x + r.w / 2, r.x + r.w]),
+      gy: hit(ys, [r.y, r.y + r.h / 2, r.y + r.h]),
+    },
+  };
 }
 
 /* ---------- Templateku: template buatan sendiri (tersimpan di PC ini) ---------- */

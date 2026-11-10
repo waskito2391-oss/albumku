@@ -58,6 +58,9 @@ let gestureBase: Project | null = null;
 let lastKey = "";
 let lastTime = 0;
 
+/** Nomor halaman aktif selalu valid untuk proyek ini (halaman bisa berkurang lewat hapus/undo/auto isi). */
+const fixIdx = (p: Project | null, i: number) => (p ? Math.max(0, Math.min(i, p.pages.length - 1)) : 0);
+
 const clone = (p: Project): Project => ({ ...p, format: { ...p.format }, pages: structuredClone(p.pages), watermark: p.watermark && { ...p.watermark } });
 
 export const useStore = create<State>((set, get) => ({
@@ -103,6 +106,7 @@ export const useStore = create<State>((set, get) => ({
     lastTime = now;
     set((s) => ({
       project: next,
+      pageIdx: fixIdx(next, s.pageIdx),
       past: merge ? s.past : [...s.past.slice(-99), prev],
       future: [],
       dirty: true,
@@ -117,7 +121,7 @@ export const useStore = create<State>((set, get) => ({
     if (!prev) return;
     const next = clone(prev);
     fn(next);
-    set({ project: next, dirty: true });
+    set((s) => ({ project: next, pageIdx: fixIdx(next, s.pageIdx), dirty: true }));
   },
   endGesture: () => {
     const base = gestureBase;
@@ -133,7 +137,7 @@ export const useStore = create<State>((set, get) => ({
       project: prev,
       past: past.slice(0, -1),
       future: [project, ...future],
-      pageIdx: Math.min(get().pageIdx, prev.pages.length - 1),
+      pageIdx: fixIdx(prev, get().pageIdx),
       sel: null,
     });
   },
@@ -141,10 +145,10 @@ export const useStore = create<State>((set, get) => ({
     const { past, project, future } = get();
     if (!future.length || !project) return;
     const next = future[0];
-    set({ project: next, past: [...past, project], future: future.slice(1), pageIdx: Math.min(get().pageIdx, next.pages.length - 1), sel: null });
+    set({ project: next, past: [...past, project], future: future.slice(1), pageIdx: fixIdx(next, get().pageIdx), sel: null });
   },
 
-  setPage: (i) => set({ pageIdx: i, sel: null }),
+  setPage: (i) => set((s) => ({ pageIdx: fixIdx(s.project, i), sel: null })),
   select: (s) => set({ sel: s }),
   addPhotos: (ps) =>
     set((s) => {
@@ -159,6 +163,16 @@ export function paletteColors(s: Pick<State, "paletteId" | "customColors" | "pho
   if (s.paletteId === "custom") return s.customColors;
   if (s.paletteId === "photo") return s.photoColors;
   return PRESET_PALETTES.find((p) => p.id === s.paletteId)?.colors ?? PRESET_PALETTES[0].colors;
+}
+
+/** Pulihkan state yang tidak konsisten (dipakai tombol "Lanjutkan" setelah error tampilan). */
+export function repairState() {
+  const s = useStore.getState();
+  const p = s.project;
+  if (p && !p.pages.length) {
+    s.set({ project: { ...p, pages: [emptyPage(p.format)] } });
+  }
+  s.set({ pageIdx: fixIdx(useStore.getState().project, s.pageIdx), sel: null });
 }
 
 export const currentPage = () => {

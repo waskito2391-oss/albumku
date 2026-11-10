@@ -91,3 +91,85 @@ export function makeText(f: Format, fonts: string[], p?: TextPreset): Omit<TextI
   };
   return { ...base, ...p?.t, stroke: { ...base.stroke, ...p?.t.stroke } };
 }
+
+/* ---------- template teks: judul + isi (beberapa teks sekaligus, tersusun rapi) ---------- */
+
+type ComboPart = { family: string[]; sample: string; sizeRel: number; t: Partial<TextItem> };
+export type TextCombo = { name: string; align: "left" | "center"; parts: ComboPart[] };
+
+const SERIF = ["Playfair Display", "Cormorant Garamond", "Georgia"];
+const SANS = ["Montserrat", "Segoe UI", "Arial"];
+const BODY = (sample: string, align: "left" | "center", sizeRel = 0.026): ComboPart => ({ family: ["Segoe UI", "Arial"], sample, sizeRel, t: { weight: 400, align, lineHeight: 1.45 } });
+
+export const TEXT_COMBOS: TextCombo[] = [
+  {
+    name: "Judul + Isi",
+    align: "center",
+    parts: [
+      { family: SERIF, sample: "Kisah Kita", sizeRel: 0.075, t: { weight: 400, italic: true, align: "center" } },
+      BODY("Setiap foto menyimpan cerita.\nDan inilah awal dari cerita kami.", "center"),
+    ],
+  },
+  {
+    name: "Judul + Isi (kiri)",
+    align: "left",
+    parts: [
+      { family: SANS, sample: "OUR STORY", sizeRel: 0.05, t: { weight: 700, uppercase: true, letterSpacing: 8, align: "left" } },
+      BODY("Dua hati, satu tujuan. Hari ini kami memulai perjalanan baru bersama keluarga dan sahabat tercinta.", "left"),
+    ],
+  },
+  {
+    name: "Bab + Judul + Isi",
+    align: "center",
+    parts: [
+      { family: SANS, sample: "BAB 01", sizeRel: 0.022, t: { weight: 500, uppercase: true, letterSpacing: 45, align: "center" } },
+      { family: SERIF, sample: "Hari Bahagia", sizeRel: 0.08, t: { weight: 400, align: "center" } },
+      BODY("Pagi yang cerah, senyum yang tak berhenti, dan pelukan hangat dari orang-orang tersayang.", "center"),
+    ],
+  },
+  {
+    name: "Script + Isi",
+    align: "center",
+    parts: [
+      { family: ["Great Vibes", "Segoe Script", "Gabriola"], sample: "Love Story", sizeRel: 0.1, t: { weight: 400, align: "center" } },
+      BODY("Cinta tidak saling menatap, tetapi bersama melihat ke arah yang sama.", "center"),
+    ],
+  },
+  {
+    name: "Tanggal + Judul + Isi",
+    align: "center",
+    parts: [
+      { family: ["Cormorant Garamond", "Georgia"], sample: "12 · 10 · 2026", sizeRel: 0.032, t: { weight: 400, letterSpacing: 15, align: "center" } },
+      { family: SANS, sample: "THE WEDDING DAY", sizeRel: 0.055, t: { weight: 300, uppercase: true, letterSpacing: 25, align: "center" } },
+      BODY("Terima kasih telah menjadi bagian dari hari terindah kami.", "center"),
+    ],
+  },
+  {
+    name: "Kutipan + Nama",
+    align: "center",
+    parts: [
+      { family: SERIF, sample: "“Rumah bukanlah tempat, melainkan orang-orang di dalamnya.”", sizeRel: 0.042, t: { weight: 400, italic: true, align: "center", lineHeight: 1.3 } },
+      { family: SANS, sample: "— KELUARGA BESAR", sizeRel: 0.02, t: { weight: 500, uppercase: true, letterSpacing: 30, align: "center" } },
+    ],
+  },
+];
+
+/**
+ * Buat teks-teks template judul + isi, ditumpuk vertikal dan berada di tengah halaman
+ * (rata kiri: di sisi kiri halaman). `measure` = tinggi kotak teks (untuk menyusun jarak).
+ */
+export function makeCombo(f: Format, fonts: string[], c: TextCombo, measure: (t: Omit<TextItem, "id">) => number): Omit<TextItem, "id">[] {
+  const { W, H } = docSize(f);
+  const x = c.align === "left" ? W * 0.08 : W * 0.15;
+  const w = c.align === "left" ? W * 0.5 : W * 0.7;
+  const gap = H * 0.018;
+  const items = c.parts.map((p) => ({ ...makeText(f, fonts, { name: "", sample: p.sample, family: p.family, sizeRel: p.sizeRel, t: p.t }), x, w }));
+  const hs = items.map(measure);
+  const total = hs.reduce((a, b) => a + b, 0) + gap * (items.length - 1);
+  let y = (H - total) / 2;
+  return items.map((t, i) => {
+    const out = { ...t, y };
+    y += hs[i] + gap;
+    return out;
+  });
+}

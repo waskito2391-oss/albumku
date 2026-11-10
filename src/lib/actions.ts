@@ -132,7 +132,8 @@ export function deletePage(i: number) {
     d.pages.splice(i, 1);
     if (!d.pages.length) d.pages.push(emptyPage(d.format));
   });
-  s.setPage(Math.max(0, Math.min(i, s.project!.pages.length - 1)));
+  // pakai state terbaru: `s.project` masih berisi halaman sebelum dihapus
+  s.setPage(Math.min(i, useStore.getState().project!.pages.length - 1));
 }
 
 export function movePage(i: number, dir: -1 | 1) {
@@ -197,6 +198,21 @@ export async function autoBuild(opts: { min: number; max: number; onlyUnused: bo
   });
   s.setPage(opts.replace ? 0 : Math.max(0, useStore.getState().project!.pages.length - pages.length));
   return pages.length;
+}
+
+/** Jadikan foto (dari pustaka) background halaman. */
+export function setPageBackground(pageIdx: number, photoId: string) {
+  const s = useStore.getState();
+  // opasitas & blur sebelumnya dipertahankan saat mengganti foto
+  s.commit((d) => void (d.pages[pageIdx].bgPhoto = { opacity: 1, blur: 0, ...d.pages[pageIdx].bgPhoto, photoId }));
+}
+
+/** Pilih file gambar dari komputer lalu jadikan background (gambar ikut masuk pustaka). */
+export async function pickPageBackground(pageIdx: number) {
+  const r = await open({ filters: IMG_FILTER, title: "Pilih gambar background" });
+  if (!r || Array.isArray(r)) return;
+  const [ph] = await runImport([r]);
+  if (ph) setPageBackground(pageIdx, ph.id);
 }
 
 /* ---------- simpan / buka proyek ---------- */
@@ -277,7 +293,7 @@ export async function exportPages(o: ExportOpts) {
     o.onProgress(done, o.pages.length, `Memuat foto halaman ${idx + 1}…`);
     const imgs = new Map<string, HTMLImageElement>();
     await Promise.all(
-      pagePhotoIds(page).map(async (id) => {
+      [...pagePhotoIds(page), ...(page.bgPhoto ? [page.bgPhoto.photoId] : [])].map(async (id) => {
         const ph = map.get(id);
         if (ph) imgs.set(id, await loadFull(ph.path));
       }),

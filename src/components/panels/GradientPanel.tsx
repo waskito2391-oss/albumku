@@ -1,4 +1,6 @@
-import { Layers, Maximize, Trash2 } from "../icons";
+import { ArrowDown, ArrowUp, Copy, ImagePlus, Layers, Maximize, Trash2 } from "../icons";
+import { pickPageBackground } from "../../lib/actions";
+import { fileUrl } from "../../lib/images";
 import { uid, useStore } from "../../store";
 import type { Overlay } from "../../types";
 import { docSize } from "../../lib/formats";
@@ -17,6 +19,14 @@ export function GradientPanel() {
   const page = project.pages[pageIdx];
   const o = sel?.kind === "overlay" ? page.overlays.find((x) => x.id === sel.id) : undefined;
   const { W, H } = docSize(f);
+  const photos = useStore((s) => s.photos);
+  const bp = page.bgPhoto;
+  const bph = bp ? photos.find((x) => x.id === bp.photoId) : undefined;
+  const updBg = (patch: { opacity?: number; blur?: number }, key: string) =>
+    commit((p) => {
+      const b = p.pages[pageIdx].bgPhoto;
+      if (b) p.pages[pageIdx].bgPhoto = { ...b, ...patch };
+    }, `bgp-${key}`);
 
   const upd = (patch: Partial<Overlay>, key?: string) =>
     o && commit((p) => {
@@ -31,6 +41,39 @@ export function GradientPanel() {
       <Section title="Background halaman">
         <GradientEditor value={page.bg} onChange={(bg) => commit((p) => void (p.pages[pageIdx].bg = bg), "bg")} />
         <p className="text-[10px] text-ink-400">Terlihat di sela foto (gutter), margin, dan ruang kosong template magazine.</p>
+      </Section>
+
+      <Section title="Gambar background">
+        {bp ? (
+          <>
+            <div className="flex items-center gap-2.5">
+              <div className="h-12 w-16 shrink-0 overflow-hidden rounded-md bg-ink-800 ring-1 ring-ink-600">
+                {bph && <img src={fileUrl(bph.thumb)} alt="" className="h-full w-full object-cover" draggable={false} />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs text-ink-200">{bph?.name ?? "Foto tidak ditemukan di pustaka"}</div>
+                <div className="mt-1 flex gap-1">
+                  <Btn variant="soft" onClick={() => pickPageBackground(pageIdx)}>
+                    Ganti
+                  </Btn>
+                  <Btn variant="danger" onClick={() => commit((p) => void (p.pages[pageIdx].bgPhoto = null))}>
+                    <Trash2 size={13} /> Hapus
+                  </Btn>
+                </div>
+              </div>
+            </div>
+            <Slider label="Opasitas" min={0.05} max={1} step={0.01} value={bp.opacity} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => updBg({ opacity: v }, "op")} />
+            <Slider label="Blur" min={0} max={1} step={0.01} value={bp.blur} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => updBg({ blur: v }, "blur")} />
+            <p className="text-[10px] text-ink-400">Turunkan opasitas supaya warna background di atas ikut terlihat (efek tint).</p>
+          </>
+        ) : (
+          <>
+            <Btn variant="soft" className="w-full py-2" onClick={() => pickPageBackground(pageIdx)}>
+              <ImagePlus size={14} /> Pilih gambar dari komputer
+            </Btn>
+            <p className="text-[10px] leading-relaxed text-ink-400">Atau klik kanan foto di kanvas → "Jadikan background".</p>
+          </>
+        )}
       </Section>
 
       <Section title="Overlay gradient (untuk caption)">
@@ -76,13 +119,32 @@ export function GradientPanel() {
       </Section>
 
       {!o ? (
-        <Empty>Tambah overlay di atas, atau klik overlay di kanvas (saat tab ini aktif) untuk mengedit. Seret untuk memindah, tarik sudut kanan-bawah untuk mengubah ukuran.</Empty>
+        <Empty>Tambah overlay di atas, atau klik overlay di kanvas (saat tab ini aktif) untuk mengedit. Seret untuk memindah, tarik sudut kanan-bawah untuk mengubah ukuran, tarik bulatan di atas untuk memutar (tahan Shift = per 15°).</Empty>
       ) : (
         <Section
           title="Edit overlay"
           right={
             <div className="flex gap-0.5">
-              <Btn title="Penuhi halaman" onClick={() => upd({ x: 0, y: 0, w: W, h: H })}>
+              <Btn title="Naik lapisan" onClick={() => commit((p) => { const a = p.pages[pageIdx].overlays; const i = a.findIndex((y) => y.id === o.id); if (i < a.length - 1) [a[i], a[i + 1]] = [a[i + 1], a[i]]; })}>
+                <ArrowUp size={13} />
+              </Btn>
+              <Btn title="Turun lapisan" onClick={() => commit((p) => { const a = p.pages[pageIdx].overlays; const i = a.findIndex((y) => y.id === o.id); if (i > 0) [a[i], a[i - 1]] = [a[i - 1], a[i]]; })}>
+                <ArrowDown size={13} />
+              </Btn>
+              <Btn
+                title="Duplikat layer"
+                onClick={() => {
+                  const id = uid();
+                  commit((p) => {
+                    const a = p.pages[pageIdx].overlays;
+                    a.splice(a.findIndex((y) => y.id === o.id) + 1, 0, { ...structuredClone(o), id, x: o.x + H * 0.02, y: o.y + H * 0.02 });
+                  });
+                  useStore.getState().select({ kind: "overlay", id });
+                }}
+              >
+                <Copy size={13} />
+              </Btn>
+              <Btn title="Penuhi halaman" onClick={() => upd({ x: 0, y: 0, w: W, h: H, rotation: 0 })}>
                 <Maximize size={13} />
               </Btn>
               <Btn
@@ -99,6 +161,7 @@ export function GradientPanel() {
           }
         >
           <GradientEditor value={o.fill} onChange={(fill) => upd({ fill }, "fill")} />
+          <Slider label="Rotasi layer" min={-180} max={180} value={o.rotation ?? 0} suffix="°" onChange={(v) => upd({ rotation: v }, "rot")} />
           <Slider label="Opasitas" min={0} max={1} step={0.01} value={o.opacity} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => upd({ opacity: v }, "op")} />
           <Slider label="Sudut membulat" min={0} max={Math.round(Math.min(o.w, o.h) / 2)} value={o.radius} onChange={(v) => upd({ radius: v }, "rad")} />
         </Section>

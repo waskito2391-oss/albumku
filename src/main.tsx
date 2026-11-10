@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { LicenseGate } from "./components/LicenseGate";
+import { UpdateNotice } from "./components/UpdateNotice";
 import "./index.css";
 import { initTheme } from "./lib/theme";
 
@@ -10,7 +12,10 @@ initTheme();
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      <LicenseGate>
+        <App />
+        <UpdateNotice />
+      </LicenseGate>
     </ErrorBoundary>
   </React.StrictMode>,
 );

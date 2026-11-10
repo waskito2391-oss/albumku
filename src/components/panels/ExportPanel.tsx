@@ -58,7 +58,7 @@ export function ExportPanel() {
     }
     setBusy(true);
     setResult(null);
-    const pages = which === "all" ? project.pages.map((_, i) => i).filter((i) => pagePhotoIds(project.pages[i]).length || project.pages[i].texts.length) : [pageIdx];
+    const pages = which === "all" ? project.pages.map((_, i) => i).filter((i) => pagePhotoIds(project.pages[i]).length || project.pages[i].texts.length || project.pages[i].bgPhoto) : [pageIdx];
     try {
       const files = await exportPages({
         kind,

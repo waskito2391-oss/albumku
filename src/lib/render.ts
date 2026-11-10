@@ -1,7 +1,7 @@
 import type { Cell, Fill, Format, Overlay, Page, Photo, Rect, TextItem, Watermark } from "../types";
 import { cellRect, docSize, mmToPx, panelCols, panelRows } from "./formats";
 import { drawFrame, pageFrameRects } from "./frames";
-import { drawWatermark } from "./watermark";
+import { drawWatermark, wmOnPage } from "./watermark";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -76,6 +76,29 @@ export function photoPlacement(r: Rect, iw: number, ih: number, c: Cell) {
   const cx = r.x + r.w / 2 + ux * Math.cos(th) - uy * Math.sin(th);
   const cy = r.y + r.h / 2 + ux * Math.sin(th) + uy * Math.cos(th);
   return { cx, cy, th, x: cx - dw / 2, y: cy - dh / 2, w: dw, h: dh, slackX: sx, slackY: sy };
+}
+
+/**
+ * Kebalikan photoPlacement: zoom & geser supaya foto tampil dengan pusat (cx, cy) dan skala `s`
+ * di sel `r`. Zoom tidak boleh < 1 (sel harus tetap tertutup penuh), geser dibatasi -1..1.
+ */
+export function placementFor(r: Rect, iw: number, ih: number, rotDeg: number, target: { cx: number; cy: number; s: number }) {
+  const th = (rotDeg * Math.PI) / 180;
+  const cs = Math.abs(Math.cos(th));
+  const sn = Math.abs(Math.sin(th));
+  const bw = r.w * cs + r.h * sn;
+  const bh = r.w * sn + r.h * cs;
+  const base = Math.max(bw / iw, bh / ih);
+  const zoom = Math.max(1, target.s / base);
+  const s = base * zoom;
+  const sx = iw * s - bw;
+  const sy = ih * s - bh;
+  const dx = target.cx - (r.x + r.w / 2);
+  const dy = target.cy - (r.y + r.h / 2);
+  const ux = dx * Math.cos(th) + dy * Math.sin(th);
+  const uy = -dx * Math.sin(th) + dy * Math.cos(th);
+  const cl = (v: number) => Math.max(-1, Math.min(1, v));
+  return { zoom, ox: sx > 0.5 ? cl((-2 * ux) / sx) : 0, oy: sy > 0.5 ? cl((-2 * uy) / sy) : 0 };
 }
 
 function imgSize(im: CanvasImageSource): [number, number] {
@@ -160,6 +183,13 @@ export function drawText(ctx: Ctx, t: TextItem, devScale: number) {
 export function drawOverlay(ctx: Ctx, o: Overlay) {
   ctx.save();
   ctx.globalAlpha *= o.opacity;
+  if (o.rotation) {
+    const cx = o.x + o.w / 2;
+    const cy = o.y + o.h / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate((o.rotation * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+  }
   ctx.fillStyle = fillStyle(ctx, o.fill, o);
   roundRect(ctx, o, o.radius);
   ctx.fill();
@@ -174,6 +204,21 @@ export function renderPage(ctx: Ctx, f: Format, page: Page, o: RenderOpts) {
   ctx.globalAlpha = 1;
   ctx.fillStyle = fillStyle(ctx, page.bg, { x: 0, y: 0, w: W, h: H });
   ctx.fillRect(0, 0, W, H);
+
+  const bp = page.bgPhoto;
+  const bph = bp ? o.photos.get(bp.photoId) : undefined;
+  const bim = bph ? o.image(bph) : null;
+  if (bp && bim) {
+    const [iw, ih] = imgSize(bim);
+    const blur = bp.blur * Math.min(W, H) * 0.03;
+    // saat diblur gambar diperbesar sedikit supaya tepinya tidak memudar
+    const s = Math.max((W + blur * 4) / iw, (H + blur * 4) / ih);
+    ctx.save();
+    ctx.globalAlpha = bp.opacity;
+    if (blur > 0) ctx.filter = `blur(${blur * o.scale}px)`;
+    ctx.drawImage(bim, (W - iw * s) / 2, (H - ih * s) / 2, iw * s, ih * s);
+    ctx.restore();
+  }
 
   page.cells.forEach((c) => {
     const r = cellRect(f, page, c);
@@ -226,7 +271,7 @@ export function renderPage(ctx: Ctx, f: Format, page: Page, o: RenderOpts) {
     for (const r of pageFrameRects({ x: f.bleed, y: f.bleed, w: TW, h: TH }, f.spread && !pf.whole)) drawFrame(ctx, r, pf, fillStyle(ctx, pf.fill, r));
   }
   page.texts.forEach((t) => drawText(ctx, t, o.scale));
-  if (o.watermark) drawWatermark(ctx, f, o.watermark.wm, o.watermark.image);
+  if (o.watermark && wmOnPage(o.watermark.wm, page)) drawWatermark(ctx, f, o.watermark.wm, o.watermark.image);
 
   if (o.editor && o.guides) drawGuides(ctx, f, o.scale, W, H, TW, TH);
 }

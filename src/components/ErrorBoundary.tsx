@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import { repairState } from "../store";
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -13,7 +14,10 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
           <h2 className="font-semibold text-ink-100">Terjadi kesalahan tampilan</h2>
           <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-xs text-red-300">{this.state.error.message}</pre>
           <p className="text-xs text-ink-400">Data proyek masih ada di memori. Klik lanjutkan; jika berulang, simpan proyek (Ctrl+S) lalu buka ulang aplikasi.</p>
-          <button onClick={() => this.setState({ error: null })} className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-on-accent">
+          <button onClick={() => {
+              repairState();
+              this.setState({ error: null });
+            }} className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-on-accent">
             Lanjutkan
           </button>
         </div>

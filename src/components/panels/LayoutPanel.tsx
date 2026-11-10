@@ -1,12 +1,12 @@
-import { BoundingBox, Copy, Crosshair, ImageOff, Plus, RotateCcw, RotateCw, Save, ScanFace, Shuffle, SplitH, SplitV, Trash2, X } from "../icons";
+import { BoundingBox, Copy, Crosshair, ImageOff, ImagePlus, Plus, RotateCcw, RotateCw, Save, ScanFace, Shuffle, SplitH, SplitV, Trash2, X } from "../icons";
 import { memo, useEffect, useMemo, useState } from "react";
 import { useStore } from "../../store";
 import type { Layout, Photo } from "../../types";
 import { layoutCount } from "../../lib/api";
-import { applyLayout, smartCropAll } from "../../lib/actions";
+import { applyLayout, setPageBackground, smartCropAll } from "../../lib/actions";
 import { pagePhotoIds, rankedLayouts, smartOffset } from "../../lib/fit";
 import { displayAspect, fromUnit, pageAspect, panelCols, panelRows, toUnit, unitOf } from "../../lib/formats";
-import { addCell, duplicateCell, gridCells, loadTemplates, makeTemplate, setCellRect, splitCell, storeTemplates, templateLayout, type MyTemplate } from "../../lib/celledit";
+import { addCell, duplicateCell, gridCells, loadTemplates, makeTemplate, removeLine, setCellRect, splitCell, storeTemplates, templateLayout, type MyTemplate } from "../../lib/celledit";
 import { Btn, Section, Seg, Slider, Toggle } from "../ui";
 
 const LayoutThumb = memo(function LayoutThumb({ l, disp, cols, rows }: { l: Layout; disp: number; cols: number; rows: number }) {
@@ -140,7 +140,10 @@ export function LayoutPanel() {
                   </>
                 );
               })()}
-              <p className="text-[10px] text-ink-400">Seret foto untuk menggeser. Seret ke sel lain untuk menukar. Scroll = zoom. Saat diputar, foto otomatis diperbesar agar tidak ada sudut kosong.</p>
+              <Btn variant="soft" className="w-full" title="Foto ini menutup seluruh halaman sebagai background" onClick={() => setPageBackground(pageIdx, cellPhoto.id)}>
+                <ImagePlus size={13} /> Jadikan background halaman
+              </Btn>
+              <p className="text-[10px] text-ink-400">Klik 2x foto untuk mengatur ukuran & posisinya (tarik sudut biru, Esc = selesai). Seret foto untuk menggeser. Seret ke sel lain untuk menukar. Scroll = zoom. Saat diputar, foto otomatis diperbesar agar tidak ada sudut kosong.</p>
             </>
           )}
           <div className="grid grid-cols-3 gap-1">
@@ -300,6 +303,14 @@ export function LayoutPanel() {
                     <Trash2 size={14} />
                   </Btn>
                 </div>
+                <div className="grid grid-cols-2 gap-1">
+                  <Btn variant="danger" title="Hapus semua kotak di kolom ini, sisa kotak melebar mengisi ruang" onClick={() => removeLine(sel.index, "col")}>
+                    <Trash2 size={13} /> Hapus kolom
+                  </Btn>
+                  <Btn variant="danger" title="Hapus semua kotak di baris ini, sisa kotak memanjang mengisi ruang" onClick={() => removeLine(sel.index, "row")}>
+                    <Trash2 size={13} /> Hapus baris
+                  </Btn>
+                </div>
                 <div className="grid grid-cols-4 gap-1">
                   {(
                     [
@@ -425,7 +436,7 @@ export function LayoutPanel() {
           onClick={() =>
             commit((p) => {
               const r = p.pages[pageIdx];
-              p.pages.forEach((pg) => Object.assign(pg, { gutter: r.gutter, margin: r.margin, radius: r.radius, bg: structuredClone(r.bg) }));
+              p.pages.forEach((pg) => Object.assign(pg, { gutter: r.gutter, margin: r.margin, radius: r.radius, bg: structuredClone(r.bg), bgPhoto: r.bgPhoto ? { ...r.bgPhoto } : null }));
             })
           }
         >

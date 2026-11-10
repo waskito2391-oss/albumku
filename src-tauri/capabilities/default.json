@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default capabilities for ALBUMKU",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default", "dialog:allow-save", "dialog:allow-open"]
+  "permissions": ["core:default", "dialog:default", "dialog:allow-save", "dialog:allow-open", "updater:default", "process:allow-restart"]
 }

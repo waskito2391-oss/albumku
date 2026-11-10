@@ -1,6 +1,7 @@
 mod export;
 mod fonts;
 mod layouts;
+mod license;
 mod photos;
 
 use percent_encoding::percent_decode_str;
@@ -43,6 +44,8 @@ fn serve_file(uri: &str) -> Response<Vec<u8>> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .register_asynchronous_uri_scheme_protocol("albumku", |_ctx, req, responder| {
             let uri = req.uri().to_string();
             std::thread::spawn(move || responder.respond(serve_file(&uri)));
@@ -67,6 +70,9 @@ pub fn run() {
             export::write_text,
             export::read_text,
             export::open_folder,
+            license::license_status,
+            license::license_activate,
+            license::license_reset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ALBUMKU");
