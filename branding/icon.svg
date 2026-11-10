@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#34322f"/>
+      <stop offset="1" stop-color="#121212"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.32" r="0.7">
+      <stop offset="0" stop-color="#e3b341" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#e3b341" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbf9f5"/>
+      <stop offset="1" stop-color="#ece7de"/>
+    </linearGradient>
+    <linearGradient id="foldL" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0.82" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.22"/>
+    </linearGradient>
+    <linearGradient id="foldR" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#000" stop-opacity="0.16"/>
+      <stop offset="0.16" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+    <!-- foto 1: golden hour di bukit -->
+    <linearGradient id="sky1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd38a"/>
+      <stop offset="0.55" stop-color="#f39a63"/>
+      <stop offset="1" stop-color="#c8607a"/>
+    </linearGradient>
+    <!-- foto 2: laut -->
+    <linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bfe3f2"/>
+      <stop offset="0.6" stop-color="#7fb9d6"/>
+      <stop offset="1" stop-color="#2f6f8c"/>
+    </linearGradient>
+    <!-- foto 3: senja merah muda -->
+    <linearGradient id="sky3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbd3d9"/>
+      <stop offset="1" stop-color="#d9849a"/>
+    </linearGradient>
+    <clipPath id="p1"><rect x="196" y="300" width="282" height="430" rx="16"/></clipPath>
+    <clipPath id="p2"><rect x="548" y="300" width="282" height="205" rx="16"/></clipPath>
+    <clipPath id="p3"><rect x="548" y="525" width="282" height="205" rx="16"/></clipPath>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="22" stdDeviation="22" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <rect x="24" y="24" width="976" height="976" rx="224" fill="url(#tile)"/>
+  <rect x="24" y="24" width="976" height="976" rx="224" fill="url(#glow)"/>
+  <rect x="25.5" y="25.5" width="973" height="973" rx="222.5" fill="none" stroke="#fff" stroke-opacity="0.07" stroke-width="3"/>
+
+  <g filter="url(#shadow)">
+    <!-- sampul -->
+    <rect x="140" y="246" width="744" height="548" rx="26" fill="#0d0d0d"/>
+    <!-- halaman -->
+    <path d="M160 268 Q336 250 512 270 L512 774 Q336 756 160 772 Z" fill="url(#page)"/>
+    <path d="M512 270 Q688 250 864 268 L864 772 Q688 756 512 774 Z" fill="url(#page)"/>
+    <path d="M160 268 Q336 250 512 270 L512 774 Q336 756 160 772 Z" fill="url(#foldL)"/>
+    <path d="M512 270 Q688 250 864 268 L864 772 Q688 756 512 774 Z" fill="url(#foldR)"/>
+  </g>
+
+  <!-- foto kiri -->
+  <g clip-path="url(#p1)">
+    <rect x="196" y="300" width="282" height="430" fill="url(#sky1)"/>
+    <circle cx="368" cy="470" r="54" fill="#fff4d6"/>
+    <path d="M196 600 Q270 520 350 585 T478 560 L478 730 L196 730 Z" fill="#7a3f5c"/>
+    <path d="M196 650 Q300 590 400 640 T478 630 L478 730 L196 730 Z" fill="#46283f"/>
+  </g>
+  <!-- foto kanan atas -->
+  <g clip-path="url(#p2)">
+    <rect x="548" y="300" width="282" height="205" fill="url(#sky2)"/>
+    <circle cx="690" cy="356" r="26" fill="#fff8e6"/>
+    <path d="M548 440 Q620 418 690 438 T830 432 L830 505 L548 505 Z" fill="#1f5470"/>
+    <path d="M548 468 Q640 452 720 466 T830 462" stroke="#d8eef7" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.8"/>
+  </g>
+  <!-- foto kanan bawah -->
+  <g clip-path="url(#p3)">
+    <rect x="548" y="525" width="282" height="205" fill="url(#sky3)"/>
+    <circle cx="640" cy="610" r="30" fill="#fff1f3"/>
+    <path d="M548 680 Q640 640 730 668 T830 650 L830 730 L548 730 Z" fill="#8c4a63"/>
+  </g>
+
+  <!-- pita pembatas kuning film -->
+  <path d="M776 252 L776 846 L801 822 L826 846 L826 252 Z" fill="#e3b341"/>
+  <path d="M776 252 L826 252 L826 268 L776 268 Z" fill="#000" opacity="0.18"/>
+</svg>
