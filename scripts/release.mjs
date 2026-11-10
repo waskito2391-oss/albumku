@@ -136,8 +136,7 @@ const page = [
   ...(mac
     ? ["", "## Pertama kali buka di Mac", "1. Buka file `.dmg`, seret **ALBUMKU** ke folder **Applications**.", "2. Buka aplikasi **Terminal**, tempel perintah ini lalu tekan Enter:", "   ```", "   xattr -cr /Applications/ALBUMKU.app", "   ```", "3. Buka ALBUMKU dari Applications.", "", "Langkah 2 cukup sekali, karena aplikasi belum ditandatangani Apple. Update berikutnya masuk otomatis."]
     : []),
-].join("
-");
+].join("\n");
 const notesFile = join(out, "notes.txt");
 writeFileSync(notesFile, page);
 console.log(`Mengunggah rilis ${tag} ke ${REPO}…`);
