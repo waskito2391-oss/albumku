@@ -4,7 +4,7 @@ import { useStore } from "../store";
 import { autoBuild, openProject, saveProject } from "../lib/actions";
 import { formatSummary } from "../lib/formats";
 import { Btn, Toggle } from "./ui";
-import { Logo, ThemeMenu } from "./Brand";
+import { AppVersion, Logo, ThemeMenu } from "./Brand";
 
 function AutoBuildDialog({ onClose }: { onClose: () => void }) {
   const photos = useStore((s) => s.photos);
@@ -76,7 +76,8 @@ export function TopBar() {
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 border-b border-ink-700/70 bg-ink-900 px-3">
-      <Logo className="mr-3 text-[15px]" />
+      <Logo className="mr-1.5 text-[15px]" />
+      <AppVersion className="mr-3" />
       <Btn title="Proyek baru" onClick={newProject}>
         <FilePlus2 size={15} />
       </Btn>

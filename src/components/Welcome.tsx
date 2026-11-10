@@ -5,7 +5,7 @@ import type { Format } from "../types";
 import { openProject } from "../lib/actions";
 import { ALBUM_SIZES, MAGAZINE_SIZES, SLIDE_RATIOS, SOCIAL_SIZES, docSize, printFormat, socialFormat } from "../lib/formats";
 import { Btn, Toggle } from "./ui";
-import { Logo, ThemeMenu } from "./Brand";
+import { AppVersion, Logo, ThemeMenu } from "./Brand";
 
 type Cat = "album" | "magazine" | "social";
 
@@ -104,7 +104,10 @@ export function Welcome() {
     <div className="grid h-full grid-cols-[minmax(420px,520px)_1fr] bg-ink-950">
       <section className="flex min-h-0 flex-col border-r border-ink-700/70 bg-ink-900">
         <header className="flex items-center justify-between px-7 pb-5 pt-6">
-          <Logo size={22} className="text-[19px]" />
+          <span className="flex items-center gap-2">
+            <Logo size={22} className="text-[19px]" />
+            <AppVersion />
+          </span>
           <div className="flex items-center gap-1">
             <ThemeMenu />
             <Btn onClick={openProject}>

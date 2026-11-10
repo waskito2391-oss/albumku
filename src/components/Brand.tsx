@@ -1,6 +1,18 @@
 import { Check, Contrast } from "./icons";
 import { useEffect, useRef, useState } from "react";
 import { getThemeMode, setThemeMode, type ThemeMode } from "../lib/theme";
+import { getVersion } from "@tauri-apps/api/app";
+
+let versionCache = "";
+
+/** Nomor versi aplikasi yang sedang terpasang (untuk memastikan update sudah masuk). */
+export function AppVersion({ className = "" }: { className?: string }) {
+  const [v, setV] = useState(versionCache);
+  useEffect(() => {
+    if (!versionCache) getVersion().then((x) => setV((versionCache = x))).catch(() => null);
+  }, []);
+  return v ? <span className={`rounded bg-ink-800 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-ink-400 ring-1 ring-ink-700 ${className}`}>v{v}</span> : null;
+}
 
 /** Tanda ALBUMKU: ikon aplikasi (album terbuka) + nama. */
 export function Logo({ size = 18, wordmark = true, className = "" }: { size?: number; wordmark?: boolean; className?: string }) {

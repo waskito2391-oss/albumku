@@ -1,6 +1,6 @@
 [package]
 name = "albumku"
-version = "0.5.0"
+version = "0.5.1"
 description = "ALBUMKU - penyusun album foto, magazine, story & feed"
 authors = ["ALBUMKU"]
 edition = "2021"
