@@ -99,10 +99,10 @@ export default function App() {
     <div className="flex h-full flex-col">
       <TopBar />
       <div className="flex min-h-0 flex-1">
-        <PhotoLibrary />
         <main className="flex min-w-0 flex-1 flex-col">
           <Canvas />
           <PageStrip />
+          <PhotoLibrary />
         </main>
         <aside className="flex w-[330px] shrink-0 flex-col border-l border-ink-700/70 bg-ink-900">
           <nav className="grid grid-cols-6 border-b border-ink-700/70">

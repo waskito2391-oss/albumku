@@ -8,16 +8,18 @@ import { cellRect, contentRect, docSize } from "../lib/formats";
 import { getImg, onImageLoaded } from "../lib/images";
 import { fontString, photoPlacement, placementFor, renderPage, textBox } from "../lib/render";
 import { smartOffset } from "../lib/fit";
-import { wmFont } from "../lib/watermark";
+import { wmFont, wmItems, wmOnPage, type WmItem } from "../lib/watermark";
 import { dragCell, edgeCursor, edgesAt, keepPhoto, type Edges, type SnapGuides } from "../lib/celledit";
 
 type Pt = { x: number; y: number };
+type Pos0 = { id: string; x: number; y: number };
 type Drag =
   | { mode: "cell"; cell: number; e: Edges; sx: number; sy: number; r0: Rect; c0: Cell }
   | { mode: "rotate"; id: string; cx: number; cy: number; sx: number; sy: number }
   | { mode: "pan"; cell: number; sx: number; sy: number; ox: number; oy: number; slackX: number; slackY: number; th: number; lock?: boolean }
   | { mode: "pscale"; cell: number; sx: number; sy: number; cx: number; cy: number; d0: number; s0: number; iw: number; ih: number; rot: number }
-  | { mode: "move"; kind: "text" | "overlay"; id: string; sx: number; sy: number; x0: number; y0: number }
+  | { mode: "move"; kind: "text" | "overlay"; id: string; sx: number; sy: number; x0: number; y0: number; group?: { texts: Pos0[]; overlays: Pos0[] } }
+  | { mode: "wm"; sx: number; sy: number; it: WmItem }
   | { mode: "resize"; kind: "text" | "overlay"; handle: "corner" | "edge"; id: string; sx: number; sy: number; w0: number; h0: number; fs0: number; rot: number; x0?: number; y0?: number };
 
 
@@ -27,6 +29,7 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 const ROT_GAP = 28;
 /** posisi Y pegangan putar; pindah ke dalam kotak bila di atas tepi halaman (tidak bisa diklik) */
 const rotHandleY = (o: Rect, scale: number) => (o.y - ROT_GAP / scale >= 0 ? o.y - ROT_GAP / scale : o.y + ROT_GAP / scale);
+const wmRect = (it: WmItem): Rect => ({ x: it.cx - it.w / 2, y: it.cy - it.h / 2, w: it.w, h: it.h });
 
 function toLocal(p: Pt, b: Rect, rot: number): Pt {
   const cx = b.x + b.w / 2;
@@ -58,6 +61,8 @@ export function Canvas() {
   const [tick, setTick] = useState(0);
   const [hover, setHover] = useState<number | null>(null);
   const [snapG, setSnapG] = useState<SnapGuides | null>(null);
+  /** garis tengah tempat watermark sedang menempel saat diseret */
+  const [wmSnap, setWmSnap] = useState<{ r: Rect; x: boolean; y: boolean } | null>(null);
   /** mode atur foto (klik 2x foto): sel yang fotonya sedang diatur ukuran & posisinya */
   const [photoEdit, setPhotoEdit] = useState<number | null>(null);
   useEffect(() => setPhotoEdit(null), [page.id, tab]);
@@ -143,6 +148,16 @@ export function Canvas() {
     return { x: (e.clientX - r.left) / cur.current.scale, y: (e.clientY - r.top) / cur.current.scale };
   };
   const cellAt = (pt: Pt, pg: Page = cur.current.page) => pg.cells.findIndex((c) => inRect(pt, cellRect(f, pg, c)));
+  /** watermark tunggal bisa diseret saat tab Watermark aktif */
+  const wmDraggable = tab === "watermark" && !!wm && !wm.tile && wmOnPage(wm, page);
+  const wmList = () => (wm && wmDraggable ? wmItems(f, wm, wm.imagePath ? getImg(wm.imagePath) : null) : []);
+  const wmAt = (pt: Pt) => {
+    const pad = 6 / scale;
+    return wmList().find((it) => {
+      const b = wmRect(it);
+      return inRect(toLocal(pt, b, wm!.rotation), { x: b.x - pad, y: b.y - pad, w: b.w + pad * 2, h: b.h + pad * 2 });
+    });
+  };
 
   /* ---------- gambar ---------- */
   useEffect(() => {
@@ -278,6 +293,34 @@ export function Canvas() {
         ctx.stroke();
       }
     }
+    if (wmDraggable) {
+      for (const it of wmList()) {
+        ctx.save();
+        ctx.translate(it.cx, it.cy);
+        ctx.rotate((wm!.rotation * Math.PI) / 180);
+        ctx.strokeStyle = "#e3b341";
+        ctx.lineWidth = lw;
+        ctx.setLineDash([6 / s, 4 / s]);
+        ctx.strokeRect(-it.w / 2 - 4 / scale, -it.h / 2 - 4 / scale, it.w + 8 / scale, it.h + 8 / scale);
+        ctx.restore();
+      }
+      if (wmSnap) {
+        const r = wmSnap.r;
+        ctx.strokeStyle = "#ff00aa";
+        ctx.lineWidth = lw;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        if (wmSnap.x) {
+          ctx.moveTo(r.x + r.w / 2, r.y);
+          ctx.lineTo(r.x + r.w / 2, r.y + r.h);
+        }
+        if (wmSnap.y) {
+          ctx.moveTo(r.x, r.y + r.h / 2);
+          ctx.lineTo(r.x + r.w, r.y + r.h / 2);
+        }
+        ctx.stroke();
+      }
+    }
     if (sel?.kind === "text") {
       const t = page.texts.find((x) => x.id === sel.id);
       if (t) {
@@ -321,7 +364,7 @@ export function Canvas() {
       }
     }
     ctx.restore();
-  }, [page, scale, sel, tick, guides, hover, photoMap, f, fontTick, W, H, wm, cellEdit, snapG, photoEdit]);
+  }, [page, scale, sel, tick, guides, hover, photoMap, f, fontTick, W, H, wm, cellEdit, snapG, photoEdit, wmDraggable, wmSnap]);
 
   /* ---------- zoom foto (scroll) & zoom tampilan (Ctrl+scroll) ---------- */
   useEffect(() => {
@@ -351,6 +394,15 @@ export function Canvas() {
   }, []);
 
   /* ---------- pointer ---------- */
+  /** posisi awal semua anggota grup template (teks & kotak yang ikut bergeser bersama) */
+  const groupOf = (g?: string) =>
+    g
+      ? {
+          texts: page.texts.filter((x) => x.group === g).map(({ id, x, y }) => ({ id, x, y })),
+          overlays: page.overlays.filter((x) => x.group === g).map(({ id, x, y }) => ({ id, x, y })),
+        }
+      : undefined;
+
   const onDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     const st = useStore.getState();
@@ -374,6 +426,10 @@ export function Canvas() {
       }
       setPhotoEdit(null);
     }
+
+    // tab Watermark: watermark di kanvas bisa langsung diseret ke mana saja
+    const wit = wmAt(pt);
+    if (wit) return begin({ mode: "wm", sx: pt.x, sy: pt.y, it: wit });
 
     // mode edit kotak: pegangan kotak terpilih didahulukan (boleh sedikit di luar kotak)
     const cellDrag = (i: number, e: Edges) => {
@@ -418,7 +474,7 @@ export function Canvas() {
       if (inRect(toLocal(pt, b, t.rotation), b)) {
         st.select({ kind: "text", id: t.id });
         st.set({ tab: "text" });
-        return begin({ mode: "move", kind: "text", id: t.id, sx: pt.x, sy: pt.y, x0: t.x, y0: t.y });
+        return begin({ mode: "move", kind: "text", id: t.id, sx: pt.x, sy: pt.y, x0: t.x, y0: t.y, group: e.altKey ? undefined : groupOf(t.group) });
       }
     }
     // overlay hanya bisa diklik saat tab Gradient aktif (supaya tidak menghalangi foto)
@@ -427,7 +483,7 @@ export function Canvas() {
         const o = page.overlays[i];
         if (inRect(toLocal(pt, o, o.rotation ?? 0), o)) {
           st.select({ kind: "overlay", id: o.id });
-          return begin({ mode: "move", kind: "overlay", id: o.id, sx: pt.x, sy: pt.y, x0: o.x, y0: o.y });
+          return begin({ mode: "move", kind: "overlay", id: o.id, sx: pt.x, sy: pt.y, x0: o.x, y0: o.y, group: e.altKey ? undefined : groupOf(o.group) });
         }
       }
     }
@@ -469,6 +525,10 @@ export function Canvas() {
         cv.current!.style.cursor = corner ? "nwse-resize" : inRect(lp, g.box) ? "move" : "default";
         return;
       }
+    }
+    if (!d && wmAt(pt)) {
+      cv.current!.style.cursor = "move";
+      return;
     }
     if (!d) {
       const overText = page.texts.some((t) => {
@@ -543,9 +603,36 @@ export function Canvas() {
         if (d.slackX > 0.5) c.ox = clamp(d.ox - (2 * lx) / d.slackX, -1, 1);
         if (d.slackY > 0.5) c.oy = clamp(d.oy - (2 * ly) / d.slackY, -1, 1);
       });
+    } else if (d.mode === "wm") {
+      // Alt = tanpa menempel ke garis tengah
+      const r = d.it.r;
+      const tol = 8 / scale;
+      let cx = d.it.cx + dx;
+      let cy = d.it.cy + dy;
+      const sx = !e.altKey && Math.abs(cx - (r.x + r.w / 2)) < tol;
+      const sy = !e.altKey && Math.abs(cy - (r.y + r.h / 2)) < tol;
+      if (sx) cx = r.x + r.w / 2;
+      if (sy) cy = r.y + r.h / 2;
+      setWmSnap(sx || sy ? { r, x: sx, y: sy } : null);
+      cv.current!.style.cursor = "grabbing";
+      const free = { x: clamp((cx - r.x) / r.w, 0, 1), y: clamp((cy - r.y) / r.h, 0, 1) };
+      st.live((p) => {
+        if (p.watermark) p.watermark = { ...p.watermark, free };
+      });
     } else if (d.mode === "move") {
       st.live((p) => {
         const pg = p.pages[idx];
+        if (d.group) {
+          for (const g of d.group.texts) {
+            const t = pg.texts.find((x) => x.id === g.id);
+            if (t) Object.assign(t, { x: g.x + dx, y: g.y + dy });
+          }
+          for (const g of d.group.overlays) {
+            const o = pg.overlays.find((x) => x.id === g.id);
+            if (o) Object.assign(o, { x: g.x + dx, y: g.y + dy });
+          }
+          return;
+        }
         const o = d.kind === "text" ? pg.texts.find((x) => x.id === d.id) : pg.overlays.find((x) => x.id === d.id);
         if (o) {
           o.x = d.x0 + dx;
@@ -607,6 +694,7 @@ export function Canvas() {
     }
     setHover(null);
     setSnapG(null);
+    setWmSnap(null);
     if (d) st.endGesture();
   };
 

@@ -64,6 +64,8 @@ export interface TextItem {
   shadow: Shadow;
   opacity: number;
   rotation: number;
+  /** id kelompok template: teks & kotak dengan grup sama ikut bergeser bersama */
+  group?: string;
 }
 
 export interface Overlay {
@@ -77,6 +79,8 @@ export interface Overlay {
   radius: number;
   /** rotasi overlay (derajat) di sekitar titik tengahnya */
   rotation?: number;
+  /** id kelompok template (lihat TextItem.group) */
+  group?: string;
 }
 
 /** Foto sebagai background halaman (menutup seluruh halaman, di bawah semua foto). */
@@ -153,6 +157,8 @@ export interface Watermark {
   opacity: number;
   rotation: number;
   pos: WmPos;
+  /** posisi bebas hasil seret di kanvas: titik tengah relatif area (0..1); bila ada, mengalahkan `pos` */
+  free?: { x: number; y: number } | null;
   /** ulang memenuhi halaman (pola) */
   tile: boolean;
   /** jarak antar ulangan relatif ukuran watermark */

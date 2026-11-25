@@ -168,14 +168,22 @@ export function WatermarkPanel() {
                 <button
                   key={p}
                   title={POS_NAMES[p]}
-                  onClick={() => upd({ pos: p })}
-                  className={`flex h-8 items-center justify-center rounded ring-1 ${wm.pos === p ? "bg-accent-soft ring-accent" : "bg-ink-800 ring-ink-700 hover:ring-ink-500"}`}
+                  onClick={() => upd({ pos: p, free: null })}
+                  className={`flex h-8 items-center justify-center rounded ring-1 ${!wm.free && wm.pos === p ? "bg-accent-soft ring-accent" : "bg-ink-800 ring-ink-700 hover:ring-ink-500"}`}
                 >
-                  <span className={`h-2 w-2 rounded-full ${wm.pos === p ? "bg-accent" : "bg-ink-500"}`} />
+                  <span className={`h-2 w-2 rounded-full ${!wm.free && wm.pos === p ? "bg-accent" : "bg-ink-500"}`} />
                 </button>
               ))}
             </div>
-            <Slider label="Jarak dari tepi" min={0} max={0.2} step={0.005} value={wm.margin} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(margin) => upd({ margin }, "margin")} />
+            {wm.free ? (
+              <div className="flex items-center gap-2 rounded-md bg-accent-soft px-2.5 py-2 text-[11px] text-accent ring-1 ring-accent/40">
+                <span className="flex-1">Posisi bebas ({Math.round(wm.free.x * 100)}%, {Math.round(wm.free.y * 100)}%)</span>
+                <Btn variant="soft" onClick={() => upd({ free: null })}>Reset</Btn>
+              </div>
+            ) : (
+              <Slider label="Jarak dari tepi" min={0} max={0.2} step={0.005} value={wm.margin} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(margin) => upd({ margin }, "margin")} />
+            )}
+            <p className="text-[10px] leading-relaxed text-ink-400">Seret watermark langsung di kanvas untuk menaruhnya di mana saja. Menempel ke garis tengah; tahan Alt untuk geser tanpa menempel.</p>
           </>
         )}
       </Section>

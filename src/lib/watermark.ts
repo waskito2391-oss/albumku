@@ -40,6 +40,43 @@ function regions(f: Format): Rect[] {
   return [{ x: b, y: b, w: TW, h: TH }];
 }
 
+let measureCtx: Ctx | null = null;
+
+/** Ukuran watermark (lebar, tinggi, ukuran font) di area dengan sisi pendek `S`. */
+function wmSize(wm: Watermark, img: CanvasImageSource | null, S: number) {
+  const w = Math.max(1, wm.size * S);
+  if (wm.mode === "image") {
+    const im = img as HTMLImageElement;
+    const iw = im.naturalWidth || (im.width as number);
+    const ih = im.naturalHeight || (im.height as number);
+    return { w, h: (w * ih) / Math.max(1, iw), fs: 0 };
+  }
+  if (!measureCtx) measureCtx = document.createElement("canvas").getContext("2d")!;
+  measureCtx.font = wmFont(wm, 100);
+  const fs = (100 * w) / Math.max(1, measureCtx.measureText(wm.text.trim()).width);
+  return { w, h: fs * 1.15, fs };
+}
+
+export type WmItem = { r: Rect; cx: number; cy: number; w: number; h: number };
+
+/** Letak watermark tunggal (bukan pola) di tiap area: titik tengah + ukuran, untuk digambar & diseret. */
+export function wmItems(f: Format, wm: Watermark, img: CanvasImageSource | null): WmItem[] {
+  if (!wm.on || wm.tile || (wm.mode === "image" ? !img : !wm.text.trim())) return [];
+  const th = (wm.rotation * Math.PI) / 180;
+  return regions(f).map((r) => {
+    const S = Math.min(r.w, r.h);
+    const { w, h } = wmSize(wm, img, S);
+    if (wm.free) return { r, w, h, cx: r.x + wm.free.x * r.w, cy: r.y + wm.free.y * r.h };
+    const m = wm.margin * S;
+    const bw = Math.abs(w * Math.cos(th)) + Math.abs(h * Math.sin(th));
+    const bh = Math.abs(w * Math.sin(th)) + Math.abs(h * Math.cos(th));
+    const [v, hz] = wm.pos;
+    const cx = hz === "l" ? r.x + m + bw / 2 : hz === "r" ? r.x + r.w - m - bw / 2 : r.x + r.w / 2;
+    const cy = v === "t" ? r.y + m + bh / 2 : v === "b" ? r.y + r.h - m - bh / 2 : r.y + r.h / 2;
+    return { r, w, h, cx, cy };
+  });
+}
+
 /** Gambar watermark di atas semua isi halaman. `img` = logo yang sudah termuat (mode gambar). */
 export function drawWatermark(ctx: Ctx, f: Format, wm: Watermark, img: CanvasImageSource | null) {
   if (!wm.on) return;
@@ -47,22 +84,10 @@ export function drawWatermark(ctx: Ctx, f: Format, wm: Watermark, img: CanvasIma
   if (wm.mode === "image" ? !img : !text) return;
   const devScale = ctx.getTransform().a;
   const th = (wm.rotation * Math.PI) / 180;
+  const single = wmItems(f, wm, img);
 
-  for (const r of regions(f)) {
-    const S = Math.min(r.w, r.h);
-    const w = Math.max(1, wm.size * S);
-    let h: number;
-    let fs = 0;
-    if (wm.mode === "image") {
-      const im = img as HTMLImageElement;
-      const iw = im.naturalWidth || (im.width as number);
-      const ih = im.naturalHeight || (im.height as number);
-      h = (w * ih) / Math.max(1, iw);
-    } else {
-      ctx.font = wmFont(wm, 100);
-      fs = (100 * w) / Math.max(1, ctx.measureText(text).width);
-      h = fs * 1.15;
-    }
+  regions(f).forEach((r, ri) => {
+    const { w, h, fs } = wmSize(wm, img, Math.min(r.w, r.h));
 
     const item = (cx: number, cy: number) => {
       ctx.save();
@@ -106,15 +131,7 @@ export function drawWatermark(ctx: Ctx, f: Format, wm: Watermark, img: CanvasIma
           const uy = j * sy;
           item(cx + ux * Math.cos(th) - uy * Math.sin(th), cy + ux * Math.sin(th) + uy * Math.cos(th));
         }
-    } else {
-      const m = wm.margin * S;
-      const bw = Math.abs(w * Math.cos(th)) + Math.abs(h * Math.sin(th));
-      const bh = Math.abs(w * Math.sin(th)) + Math.abs(h * Math.cos(th));
-      const [v, hz] = wm.pos;
-      const cx = hz === "l" ? r.x + m + bw / 2 : hz === "r" ? r.x + r.w - m - bw / 2 : r.x + r.w / 2;
-      const cy = v === "t" ? r.y + m + bh / 2 : v === "b" ? r.y + r.h - m - bh / 2 : r.y + r.h / 2;
-      item(cx, cy);
-    }
+    } else if (single[ri]) item(single[ri].cx, single[ri].cy);
     ctx.restore();
-  }
+  });
 }
